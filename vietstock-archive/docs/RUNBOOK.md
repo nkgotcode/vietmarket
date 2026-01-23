@@ -37,11 +37,16 @@ vietstock-archive backfill --budget-pages 200 --rate 1
 - `--rate`: requests/second (default 1).
 
 #### Automatic stop
-The backfill crawler will try to detect when pagination has ended across all enabled category seeds.
-When it believes it is complete, it sets:
-- `kv.backfill.done = 1`
+Backfill runs until it appears to have exhausted historical pages.
 
-From that point, the hourly backfill cron should be disabled/skip and we keep **forward-filling** via RSS only.
+Implementation details:
+- Vietstock category pages render listings via JS; we use the server endpoint:
+  - `/StartPage/ChannelContentPage?channelID=<id>&page=<n>`
+- For each seed/channel, if we see **3 consecutive pages with 0 new article URLs**, we mark that seed `done=1`.
+- Once **all** enabled seeds are done, we set:
+  - `kv.backfill.done = 1`
+
+You can force backfill to resume by setting `kv.backfill.done=0`.
 
 ### fetch
 Fetches pending article URLs, stores HTML + cleaned text.

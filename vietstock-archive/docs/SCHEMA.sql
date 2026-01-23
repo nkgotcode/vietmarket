@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS feeds (
 CREATE TABLE IF NOT EXISTS seeds (
   seed_url TEXT PRIMARY KEY,
   feed_url TEXT,
+  channel_id INTEGER, -- derived from RSS numeric id
   kind TEXT NOT NULL, -- 'category'
   note TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
@@ -29,6 +30,8 @@ CREATE TABLE IF NOT EXISTS seeds (
 CREATE TABLE IF NOT EXISTS crawl_state (
   seed_url TEXT PRIMARY KEY,
   next_page INTEGER NOT NULL DEFAULT 1,
+  done INTEGER NOT NULL DEFAULT 0,
+  no_new_pages INTEGER NOT NULL DEFAULT 0,
   last_crawled_at TEXT,
   oldest_seen_published_at TEXT,
   last_error TEXT

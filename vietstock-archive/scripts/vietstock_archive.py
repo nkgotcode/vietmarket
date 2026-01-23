@@ -69,10 +69,18 @@ def connect() -> sqlite3.Connection:
 
 def apply_schema(conn: sqlite3.Connection, schema_sql: str) -> None:
     conn.executescript(schema_sql)
-    # Lightweight migration for older DBs: add columns if missing.
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(articles)").fetchall()}
-    if "fetch_method" not in cols:
-        conn.execute("ALTER TABLE articles ADD COLUMN fetch_method TEXT")
+
+    # Lightweight migrations for older DBs.
+    def ensure_col(table: str, col: str, decl: str) -> None:
+        cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if col not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+
+    ensure_col("articles", "fetch_method", "TEXT")
+    ensure_col("seeds", "channel_id", "INTEGER")
+    ensure_col("crawl_state", "done", "INTEGER NOT NULL DEFAULT 0")
+    ensure_col("crawl_state", "no_new_pages", "INTEGER NOT NULL DEFAULT 0")
+
     conn.commit()
 
 
@@ -275,12 +283,22 @@ def rss_list_from_index(index_text: str) -> list[str]:
     return feeds
 
 
+def parse_feed_id(feed_url: str) -> Optional[int]:
+    u = urllib.parse.urlparse(feed_url)
+    m = re.match(r"^/(\d+)/", u.path or "")
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except Exception:
+        return None
+
+
 def derive_seed_from_feed(feed_url: str) -> Optional[str]:
     # https://vietstock.vn/761/kinh-te/vi-mo.rss -> https://vietstock.vn/kinh-te/vi-mo.htm
     # https://vietstock.vn/144/chung-khoan.rss -> https://vietstock.vn/chung-khoan.htm
     u = urllib.parse.urlparse(feed_url)
-    path = u.path
-    path = path.replace("//", "/")
+    path = (u.path or "").replace("//", "/")
     # remove leading /<id>/
     m = re.match(r"^/(\d+)(/.*)$", path)
     if m:
@@ -326,12 +344,19 @@ def cmd_init(args: argparse.Namespace) -> int:
         )
         seed = derive_seed_from_feed(f_url)
         if seed:
+            channel_id = parse_feed_id(f_url)
             conn.execute(
-                "INSERT OR IGNORE INTO seeds(seed_url, feed_url, kind, note) VALUES (?, ?, 'category', ?)",
-                (seed, f_url, "derived from rss"),
+                "INSERT OR IGNORE INTO seeds(seed_url, feed_url, channel_id, kind, note) VALUES (?, ?, ?, 'category', ?)",
+                (seed, f_url, channel_id, "derived from rss"),
             )
+            # Ensure channel_id is populated if the row existed already.
+            if channel_id is not None:
+                conn.execute(
+                    "UPDATE seeds SET channel_id=COALESCE(channel_id, ?) WHERE seed_url=?",
+                    (channel_id, seed),
+                )
             conn.execute(
-                "INSERT OR IGNORE INTO crawl_state(seed_url, next_page) VALUES (?, 1)",
+                "INSERT OR IGNORE INTO crawl_state(seed_url, next_page, done, no_new_pages) VALUES (?, 1, 0, 0)",
                 (seed,),
             )
 
@@ -463,101 +488,126 @@ def build_page_url(seed_url: str, page: int) -> str:
     return urllib.parse.urlunparse((u.scheme, u.netloc, u.path, u.params, new_q, u.fragment))
 
 
-def q_backfill_done(conn: sqlite3.Connection, sample_pages: int = 1) -> bool:
-    """Heuristic: consider backfill done if for each enabled seed, the next page we try
-    does not expose any further pagination (no next page link).
+def fetch_channel_page(channel_id: int, page: int, fromdate: str = "", todate: str = "") -> bytes:
+    """Fetch Vietstock channel listing page HTML.
 
-    We do a lightweight check (sample_pages=1) because a full proof requires crawling.
+    Channel pages render content via JS that calls:
+      /StartPage/ChannelContentPage?channelID=<id>&page=<n>[&fromdate=YYYY-MM-DD&todate=YYYY-MM-DD]
+
+    This endpoint returns HTML containing the listing items with article links.
     """
-    seeds = conn.execute("SELECT seed_url FROM seeds WHERE enabled=1").fetchall()
-    if not seeds:
-        return True
-
-    for (seed_url,) in [(r[0],) for r in seeds]:
-        st = conn.execute("SELECT next_page FROM crawl_state WHERE seed_url=?", (seed_url,)).fetchone()
-        next_page = int(st[0]) if st else 1
-        test_url = build_page_url(seed_url, next_page)
-        try:
-            body = http_get(test_url, timeout=20)
-        except Exception:
-            return False
-        nxt = find_next_page(body, next_page)
-        if nxt is not None:
-            return False
-
-    return True
+    qs = {
+        "channelID": str(channel_id),
+        "page": str(page),
+    }
+    if fromdate:
+        qs["fromdate"] = fromdate
+    if todate:
+        qs["todate"] = todate
+    url = "https://vietstock.vn/StartPage/ChannelContentPage?" + urllib.parse.urlencode(qs)
+    return http_get(url, timeout=25)
 
 
 def cmd_backfill(args: argparse.Namespace) -> int:
     conn = connect()
 
-    # Stop condition: if every enabled seed no longer shows a next page (pagination ends),
-    # disable backfill automatically.
-    backfill_done = q_backfill_done(conn)
-    if backfill_done:
-        conn.execute("INSERT INTO kv(key,value) VALUES('backfill.done','1') ON CONFLICT(key) DO UPDATE SET value='1', updated_at=datetime('now')")
-        conn.commit()
-        print("Backfill appears complete (no further pagination across seeds). Disabled via kv.backfill.done=1")
+    # Manual global stop switch.
+    backfill_done = conn.execute("SELECT value FROM kv WHERE key='backfill.done'").fetchone()
+    if backfill_done and str(backfill_done[0]).strip() == "1":
+        print("Backfill disabled (kv.backfill.done=1).")
         return 0
 
-    seeds = [row["seed_url"] for row in conn.execute("SELECT seed_url FROM seeds WHERE enabled=1").fetchall()]
+    # Load enabled seeds with channel_id.
+    seeds = conn.execute(
+        "SELECT seed_url, COALESCE(channel_id, 0) AS channel_id FROM seeds WHERE enabled=1 ORDER BY seed_url"
+    ).fetchall()
 
     budget_pages = args.budget_pages
     pages_done = 0
+    seeds_done_this_run = 0
 
-    for seed in seeds:
-        row = conn.execute("SELECT next_page FROM crawl_state WHERE seed_url=?", (seed,)).fetchone()
-        next_page = int(row[0]) if row else 1
+    for row in seeds:
+        seed_url = row["seed_url"]
+        channel_id = int(row["channel_id"] or 0)
+
+        st = conn.execute(
+            "SELECT next_page, done, no_new_pages FROM crawl_state WHERE seed_url=?",
+            (seed_url,),
+        ).fetchone()
+        next_page = int(st[0]) if st else 1
+        done = int(st[1]) if st else 0
+        no_new_pages = int(st[2]) if st else 0
+
+        if done:
+            seeds_done_this_run += 1
+            continue
 
         while pages_done < budget_pages:
-            url = build_page_url(seed, next_page)
             try:
-                body = http_get(url, timeout=20)
+                if channel_id:
+                    body = fetch_channel_page(channel_id, next_page)
+                else:
+                    # Fallback: fetch the seed page directly.
+                    body = http_get(build_page_url(seed_url, next_page), timeout=20)
             except Exception as e:
                 conn.execute(
                     "UPDATE crawl_state SET last_crawled_at=?, last_error=? WHERE seed_url=?",
-                    (now_iso(), str(e), seed),
+                    (now_iso(), str(e), seed_url),
                 )
                 conn.commit()
                 break
 
             found = extract_links_from_listing(body)
+
+            new_inserts = 0
             for a_url in found:
-                # Never overwrite fetched/failed items back to pending.
-                conn.execute(
+                cur = conn.execute(
                     "INSERT OR IGNORE INTO articles(url, source, fetch_status) VALUES (?, 'backfill', 'pending')",
                     (a_url,),
                 )
-                # Keep source if missing only.
+                if cur.rowcount:
+                    new_inserts += 1
                 conn.execute(
                     "UPDATE articles SET source=COALESCE(source, 'backfill') WHERE url=?",
                     (a_url,),
                 )
 
             pages_done += 1
+
+            if new_inserts == 0:
+                no_new_pages += 1
+            else:
+                no_new_pages = 0
+
+            # If we got 3 consecutive pages with no new links, assume we've bottomed out for this seed.
+            seed_done = 1 if no_new_pages >= 3 else 0
+
             conn.execute(
-                "UPDATE crawl_state SET last_crawled_at=?, next_page=? WHERE seed_url=?",
-                (now_iso(), next_page + 1, seed),
+                "UPDATE crawl_state SET last_crawled_at=?, next_page=?, no_new_pages=?, done=?, last_error=NULL WHERE seed_url=?",
+                (now_iso(), next_page + 1, no_new_pages, seed_done, seed_url),
             )
             conn.commit()
 
-            nxt = find_next_page(body, next_page)
-            if not nxt:
-                # No further pagination detected for this seed.
-                break
-            next_page = nxt
+            next_page += 1
 
-            # polite delay
+            if seed_done:
+                seeds_done_this_run += 1
+                break
+
             time.sleep(max(0.0, 1.0 / max(0.1, args.rate)))
 
         if pages_done >= budget_pages:
             break
 
-    # After a run, re-check global completion.
-    if q_backfill_done(conn):
-        conn.execute("INSERT INTO kv(key,value) VALUES('backfill.done','1') ON CONFLICT(key) DO UPDATE SET value='1', updated_at=datetime('now')")
+    # If all seeds are done, set global flag.
+    total_enabled = conn.execute("SELECT COUNT(*) FROM seeds WHERE enabled=1").fetchone()[0]
+    total_done = conn.execute("SELECT COUNT(*) FROM crawl_state WHERE done=1").fetchone()[0]
+    if total_enabled and total_done >= total_enabled:
+        conn.execute(
+            "INSERT INTO kv(key,value) VALUES('backfill.done','1') ON CONFLICT(key) DO UPDATE SET value='1', updated_at=datetime('now')"
+        )
         conn.commit()
-        print(f"Backfill crawl done (pages={pages_done}). Backfill now appears complete; set kv.backfill.done=1")
+        print(f"Backfill crawl done (pages={pages_done}). All seeds done; set kv.backfill.done=1")
         return 0
 
     print(f"Backfill crawl done (pages={pages_done})")
