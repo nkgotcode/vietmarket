@@ -398,14 +398,16 @@ def cmd_rss(args: argparse.Namespace) -> int:
 
         items = parse_rss_xml(xml)
         for it in items[: args.limit]:
-            upsert_article(
-                conn,
-                it["url"],
-                title=it.get("title"),
-                published_at=it.get("published_at"),
-                source="rss",
-                feed_url=f_url,
-                fetch_status="pending",
+            url = it["url"]
+            # Never overwrite an already-fetched/failed article back to pending.
+            conn.execute(
+                "INSERT OR IGNORE INTO articles(url, title, published_at, source, feed_url, fetch_status) VALUES (?, ?, ?, 'rss', ?, 'pending')",
+                (url, it.get("title"), it.get("published_at"), f_url),
+            )
+            # Fill missing metadata but keep existing fetch_status.
+            conn.execute(
+                "UPDATE articles SET title=COALESCE(title, ?), published_at=COALESCE(published_at, ?), source=COALESCE(source, 'rss'), feed_url=COALESCE(feed_url, ?) WHERE url=?",
+                (it.get("title"), it.get("published_at"), f_url, url),
             )
             total += 1
 
@@ -486,12 +488,15 @@ def cmd_backfill(args: argparse.Namespace) -> int:
 
             found = extract_links_from_listing(body)
             for a_url in found:
-                upsert_article(
-                    conn,
-                    a_url,
-                    source="backfill",
-                    feed_url=None,
-                    fetch_status="pending",
+                # Never overwrite fetched/failed items back to pending.
+                conn.execute(
+                    "INSERT OR IGNORE INTO articles(url, source, fetch_status) VALUES (?, 'backfill', 'pending')",
+                    (a_url,),
+                )
+                # Keep source if missing only.
+                conn.execute(
+                    "UPDATE articles SET source=COALESCE(source, 'backfill') WHERE url=?",
+                    (a_url,),
                 )
 
             pages_done += 1
