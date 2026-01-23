@@ -78,6 +78,48 @@ def http_get(url: str, timeout: int = 30) -> bytes:
         return resp.read()
 
 
+def http_get_playwright(url: str, timeout_ms: int = 45000) -> bytes:
+    """Fetch rendered HTML using Playwright (Node).
+
+    Requires: `npm i playwright` (or already present in node_modules/global).
+    """
+    import subprocess
+
+    js = r"""
+const url = process.argv[1];
+const timeoutMs = parseInt(process.argv[2], 10) || 45000;
+(async () => {
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+  const html = await page.content();
+  await browser.close();
+  process.stdout.write(html);
+})().catch(err => { console.error(String(err && err.stack || err)); process.exit(1); });
+""".strip()
+
+    p = subprocess.run(
+        ["node", "-e", js, url, str(timeout_ms)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if p.returncode != 0:
+        raise RuntimeError(f"playwright fetch failed: {p.stderr.decode('utf-8', errors='ignore')[:500]}")
+    return p.stdout
+
+
+def fetch_html(url: str, timeout: int = 30, playwright_fallback: bool = True) -> bytes:
+    """Fetch HTML; fallback to Playwright on blocks or low-content responses."""
+    try:
+        return http_get(url, timeout=timeout)
+    except Exception as e:
+        if playwright_fallback:
+            return http_get_playwright(url)
+        raise
+
+
 def normalize_url(url: str) -> str:
     # normalize http->https for vietstock.vn
     url = url.strip()
@@ -130,6 +172,35 @@ def strip_tags(html_str: str) -> str:
     return text.strip()
 
 
+def extract_main_text(html_bytes: bytes) -> str:
+    """Vietstock-specific-ish extractor.
+
+    Prefer known paragraph classes (pHead/pBody/pTitle) found in Vietstock article pages.
+    Fallback to full-page tag stripping.
+    """
+    s = html_bytes.decode("utf-8", errors="ignore")
+
+    # Vietstock article body commonly uses <p class="pHead"> and <p class="pBody">.
+    paras = []
+    for cls in ("pTitle", "pHead", "pBody"):
+        for m in re.finditer(rf"(?is)<p[^>]*class=\"{cls}\"[^>]*>(.*?)</p>", s):
+            t = strip_tags(m.group(1))
+            if t:
+                paras.append(t)
+
+    # Dedupe consecutive duplicates
+    cleaned = []
+    for p in paras:
+        if not cleaned or cleaned[-1] != p:
+            cleaned.append(p)
+
+    # If we got a reasonable amount of content, return it.
+    if len(" ".join(cleaned).split()) >= 80:
+        return "\n\n".join(cleaned).strip()
+
+    return strip_tags(s)
+
+
 def extract_title(html_bytes: bytes) -> Optional[str]:
     s = html_bytes.decode("utf-8", errors="ignore")
     m = re.search(r"(?is)<meta\s+property=\"og:title\"\s+content=\"([^\"]+)\"", s)
@@ -143,20 +214,47 @@ def extract_title(html_bytes: bytes) -> Optional[str]:
 
 def extract_published(html_bytes: bytes) -> Optional[str]:
     s = html_bytes.decode("utf-8", errors="ignore")
-    # try dc.created or article:published_time
+
+    # Prefer real article timestamps first.
     for pat in [
-        r"(?is)<meta\s+name=\"dc.created\"\s+content=\"([^\"]+)\"",
         r"(?is)<meta\s+property=\"article:published_time\"\s+content=\"([^\"]+)\"",
+        r"(?is)<meta\s+itemprop=\"datePublished\"[^>]*content=\"([^\"]+)\"",
     ]:
         m = re.search(pat, s)
         if m:
             val = m.group(1).strip()
-            # dc.created might be YYYY-MM-DD
             try:
                 dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
                 return dt.isoformat(timespec="seconds")
             except Exception:
                 pass
+
+    # Vietstock page markup often has a visible timestamp block.
+    m = re.search(r"(?is)<span\s+class=\"datenew\"[^>]*>([^<]+)</span>", s)
+    if m:
+        raw = html.unescape(m.group(1)).strip()
+        # e.g. 23-01-2026 22:15:00+07:00
+        try:
+            if re.match(r"^\d{2}-\d{2}-\d{4} ", raw):
+                dd, mm, yyyy = raw[0:2], raw[3:5], raw[6:10]
+                rest = raw[11:]
+                iso = f"{yyyy}-{mm}-{dd}T{rest}"
+                dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+                return dt.isoformat(timespec="seconds")
+        except Exception:
+            pass
+
+    # dc.created is frequently present but often a site default (e.g. 2002-01-01). Only use if it's not the default.
+    m = re.search(r"(?is)<meta\s+name=\"dc.created\"\s+content=\"([^\"]+)\"", s)
+    if m:
+        val = m.group(1).strip()
+        if val and val != "2002-01-01":
+            try:
+                dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+                return dt.isoformat(timespec="seconds")
+            except Exception:
+                pass
+
     return None
 
 
@@ -421,11 +519,23 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     for r in rows:
         url = r["url"]
         try:
-            raw = http_get(url, timeout=30)
+            raw = fetch_html(url, timeout=30, playwright_fallback=True)
             title = extract_title(raw)
             pub = extract_published(raw)
-            text = strip_tags(raw.decode("utf-8", errors="ignore"))
+            text = extract_main_text(raw)
             html_path, text_path, h, wc = store_content(pub, url, raw, text)
+
+            # If the extracted body is suspiciously short, try Playwright once.
+            if wc < 80:
+                try:
+                    raw2 = http_get_playwright(url)
+                    title2 = extract_title(raw2) or title
+                    pub2 = extract_published(raw2) or pub
+                    text2 = extract_main_text(raw2)
+                    html_path, text_path, h, wc = store_content(pub2, url, raw2, text2)
+                    raw, title, pub, text = raw2, title2, pub2, text2
+                except Exception:
+                    pass
 
             upsert_article(
                 conn,
@@ -471,8 +581,8 @@ def cmd_status(args: argparse.Namespace) -> int:
             "pending": q1("SELECT COUNT(*) FROM articles WHERE fetch_status='pending'"),
             "fetched": q1("SELECT COUNT(*) FROM articles WHERE fetch_status='fetched'"),
             "failed": q1("SELECT COUNT(*) FROM articles WHERE fetch_status='failed'"),
-            "oldest_published_at": q1("SELECT MIN(published_at) FROM articles WHERE published_at IS NOT NULL"),
-            "newest_published_at": q1("SELECT MAX(published_at) FROM articles WHERE published_at IS NOT NULL"),
+            "oldest_published_at": q1("SELECT MIN(published_at) FROM articles WHERE published_at IS NOT NULL AND published_at NOT LIKE '2002-01-01%'"),
+            "newest_published_at": q1("SELECT MAX(published_at) FROM articles WHERE published_at IS NOT NULL AND published_at NOT LIKE '2002-01-01%'"),
         },
         "backfill": {
             "seeds": q1("SELECT COUNT(*) FROM seeds WHERE enabled=1"),

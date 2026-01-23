@@ -60,7 +60,21 @@ vietstock-archive status --json
 - Oldest "seen" date is tracked as `MIN(articles.published_at)`.
 - Backfill progress per category is tracked in `crawl_state.next_page`.
 
+## Extraction + Playwright fallback
+- We use a Vietstock-specific extractor that prefers paragraphs with classes:
+  - `pTitle`, `pHead`, `pBody`
+  - then falls back to generic tag-stripping.
+- If fetch fails (403/blocked/etc) **or** extracted text is too short (< ~80 words), we attempt a **Playwright (Node) fallback** to fetch rendered HTML.
+
+### Playwright requirement
+The fallback requires the Node package `playwright` to be installed and resolvable by `node`:
+
+```bash
+npm i playwright
+```
+
+(If Playwright is not installed, the fetcher will still work for most pages using the browser-like User-Agent.)
+
 ## Known limitations
 - Pagination detection is heuristic (searches `page=` links). Some categories may use different paging.
-- Extraction is currently basic (tag stripping); can be upgraded later (Playwright + better DOM extraction).
-- `published_at` may be missing for some pages; we fall back to metadata when present.
+- `published_at` can be inconsistent in site metadata; we prioritize `article:published_time` and visible timestamps and only use `dc.created` when it's not the site default.
