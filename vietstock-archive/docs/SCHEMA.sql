@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS articles (
   discovered_at TEXT NOT NULL DEFAULT (datetime('now')),
   fetched_at TEXT,
   fetch_status TEXT NOT NULL DEFAULT 'pending', -- pending|fetched|failed
+  fetch_method TEXT, -- http|playwright
   fetch_error TEXT,
   html_path TEXT,
   text_path TEXT,

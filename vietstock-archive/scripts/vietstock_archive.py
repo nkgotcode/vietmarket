@@ -69,6 +69,10 @@ def connect() -> sqlite3.Connection:
 
 def apply_schema(conn: sqlite3.Connection, schema_sql: str) -> None:
     conn.executescript(schema_sql)
+    # Lightweight migration for older DBs: add columns if missing.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(articles)").fetchall()}
+    if "fetch_method" not in cols:
+        conn.execute("ALTER TABLE articles ADD COLUMN fetch_method TEXT")
     conn.commit()
 
 
@@ -295,6 +299,13 @@ def upsert_article(conn: sqlite3.Connection, url: str, **fields) -> None:
     conn.execute(sql, [url] + list(fields.values()))
 
 
+def bump_kv(conn: sqlite3.Connection, key: str, delta: int = 1) -> None:
+    conn.execute(
+        "INSERT INTO kv(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+?, updated_at=datetime('now')",
+        (key, str(delta), delta),
+    )
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     # docs live at: clawd/vietstock-archive/docs
     docs_dir = Path(__file__).resolve().parents[1] / "docs"
@@ -519,14 +530,21 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     for r in rows:
         url = r["url"]
         try:
-            raw = fetch_html(url, timeout=30, playwright_fallback=True)
+            fetch_method = "http"
+            try:
+                raw = http_get(url, timeout=30)
+            except Exception:
+                # Hard failure -> Playwright fallback
+                raw = http_get_playwright(url)
+                fetch_method = "playwright"
+
             title = extract_title(raw)
             pub = extract_published(raw)
             text = extract_main_text(raw)
             html_path, text_path, h, wc = store_content(pub, url, raw, text)
 
             # If the extracted body is suspiciously short, try Playwright once.
-            if wc < 80:
+            if wc < 80 and fetch_method != "playwright":
                 try:
                     raw2 = http_get_playwright(url)
                     title2 = extract_title(raw2) or title
@@ -534,6 +552,7 @@ def cmd_fetch(args: argparse.Namespace) -> int:
                     text2 = extract_main_text(raw2)
                     html_path, text_path, h, wc = store_content(pub2, url, raw2, text2)
                     raw, title, pub, text = raw2, title2, pub2, text2
+                    fetch_method = "playwright"
                 except Exception:
                     pass
 
@@ -544,12 +563,18 @@ def cmd_fetch(args: argparse.Namespace) -> int:
                 published_at=pub,
                 fetched_at=now_iso(),
                 fetch_status="fetched",
+                fetch_method=fetch_method,
                 fetch_error=None,
                 html_path=html_path,
                 text_path=text_path,
                 content_sha256=h,
                 word_count=wc,
             )
+            if fetch_method == "playwright":
+                bump_kv(conn, "fetch.playwright_used", 1)
+            else:
+                bump_kv(conn, "fetch.http_used", 1)
+
             fetched += 1
         except Exception as e:
             upsert_article(
@@ -559,6 +584,7 @@ def cmd_fetch(args: argparse.Namespace) -> int:
                 fetch_status="failed",
                 fetch_error=str(e),
             )
+            bump_kv(conn, "fetch.failed", 1)
             failed += 1
 
         conn.commit()
@@ -572,7 +598,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     conn = connect()
 
     def q1(sql: str, params=()):
-        return conn.execute(sql, params).fetchone()[0]
+        row = conn.execute(sql, params).fetchone()
+        return row[0] if row is not None else None
 
     stats = {
         "db": str(DB_PATH),
@@ -583,6 +610,11 @@ def cmd_status(args: argparse.Namespace) -> int:
             "failed": q1("SELECT COUNT(*) FROM articles WHERE fetch_status='failed'"),
             "oldest_published_at": q1("SELECT MIN(published_at) FROM articles WHERE published_at IS NOT NULL AND published_at NOT LIKE '2002-01-01%'"),
             "newest_published_at": q1("SELECT MAX(published_at) FROM articles WHERE published_at IS NOT NULL AND published_at NOT LIKE '2002-01-01%'"),
+        },
+        "fetch": {
+            "http_used": q1("SELECT CAST(value AS INTEGER) FROM kv WHERE key='fetch.http_used'") or 0,
+            "playwright_used": q1("SELECT CAST(value AS INTEGER) FROM kv WHERE key='fetch.playwright_used'") or 0,
+            "failed": q1("SELECT CAST(value AS INTEGER) FROM kv WHERE key='fetch.failed'") or 0,
         },
         "backfill": {
             "seeds": q1("SELECT COUNT(*) FROM seeds WHERE enabled=1"),
