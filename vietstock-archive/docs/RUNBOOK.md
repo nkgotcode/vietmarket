@@ -36,6 +36,13 @@ vietstock-archive backfill --budget-pages 200 --rate 1
 - `--budget-pages`: max listing pages to fetch per run (controls speed and site load).
 - `--rate`: requests/second (default 1).
 
+#### Automatic stop
+The backfill crawler will try to detect when pagination has ended across all enabled category seeds.
+When it believes it is complete, it sets:
+- `kv.backfill.done = 1`
+
+From that point, the hourly backfill cron should be disabled/skip and we keep **forward-filling** via RSS only.
+
 ### fetch
 Fetches pending article URLs, stores HTML + cleaned text.
 

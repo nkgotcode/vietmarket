@@ -463,8 +463,43 @@ def build_page_url(seed_url: str, page: int) -> str:
     return urllib.parse.urlunparse((u.scheme, u.netloc, u.path, u.params, new_q, u.fragment))
 
 
+def q_backfill_done(conn: sqlite3.Connection, sample_pages: int = 1) -> bool:
+    """Heuristic: consider backfill done if for each enabled seed, the next page we try
+    does not expose any further pagination (no next page link).
+
+    We do a lightweight check (sample_pages=1) because a full proof requires crawling.
+    """
+    seeds = conn.execute("SELECT seed_url FROM seeds WHERE enabled=1").fetchall()
+    if not seeds:
+        return True
+
+    for (seed_url,) in [(r[0],) for r in seeds]:
+        st = conn.execute("SELECT next_page FROM crawl_state WHERE seed_url=?", (seed_url,)).fetchone()
+        next_page = int(st[0]) if st else 1
+        test_url = build_page_url(seed_url, next_page)
+        try:
+            body = http_get(test_url, timeout=20)
+        except Exception:
+            return False
+        nxt = find_next_page(body, next_page)
+        if nxt is not None:
+            return False
+
+    return True
+
+
 def cmd_backfill(args: argparse.Namespace) -> int:
     conn = connect()
+
+    # Stop condition: if every enabled seed no longer shows a next page (pagination ends),
+    # disable backfill automatically.
+    backfill_done = q_backfill_done(conn)
+    if backfill_done:
+        conn.execute("INSERT INTO kv(key,value) VALUES('backfill.done','1') ON CONFLICT(key) DO UPDATE SET value='1', updated_at=datetime('now')")
+        conn.commit()
+        print("Backfill appears complete (no further pagination across seeds). Disabled via kv.backfill.done=1")
+        return 0
+
     seeds = [row["seed_url"] for row in conn.execute("SELECT seed_url FROM seeds WHERE enabled=1").fetchall()]
 
     budget_pages = args.budget_pages
@@ -508,7 +543,7 @@ def cmd_backfill(args: argparse.Namespace) -> int:
 
             nxt = find_next_page(body, next_page)
             if not nxt:
-                # No further pagination detected; stop this seed.
+                # No further pagination detected for this seed.
                 break
             next_page = nxt
 
@@ -517,6 +552,13 @@ def cmd_backfill(args: argparse.Namespace) -> int:
 
         if pages_done >= budget_pages:
             break
+
+    # After a run, re-check global completion.
+    if q_backfill_done(conn):
+        conn.execute("INSERT INTO kv(key,value) VALUES('backfill.done','1') ON CONFLICT(key) DO UPDATE SET value='1', updated_at=datetime('now')")
+        conn.commit()
+        print(f"Backfill crawl done (pages={pages_done}). Backfill now appears complete; set kv.backfill.done=1")
+        return 0
 
     print(f"Backfill crawl done (pages={pages_done})")
     return 0
@@ -652,6 +694,9 @@ def cmd_status(args: argparse.Namespace) -> int:
             "http_used": q1("SELECT CAST(value AS INTEGER) FROM kv WHERE key='fetch.http_used'") or 0,
             "playwright_used": q1("SELECT CAST(value AS INTEGER) FROM kv WHERE key='fetch.playwright_used'") or 0,
             "failed": q1("SELECT CAST(value AS INTEGER) FROM kv WHERE key='fetch.failed'") or 0,
+        },
+        "control": {
+            "backfill_done": (q1("SELECT value FROM kv WHERE key='backfill.done'") or "0")
         },
         "backfill": {
             "seeds": q1("SELECT COUNT(*) FROM seeds WHERE enabled=1"),
