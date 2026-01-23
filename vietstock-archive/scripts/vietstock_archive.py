@@ -606,6 +606,33 @@ def cmd_status(args: argparse.Namespace) -> int:
         row = conn.execute(sql, params).fetchone()
         return row[0] if row is not None else None
 
+    # Consistency checks: detect rows where status doesn't match stored paths/errors.
+    pending_with_files = q1(
+        """
+        SELECT COUNT(*)
+        FROM articles
+        WHERE fetch_status='pending'
+          AND html_path IS NOT NULL
+          AND text_path IS NOT NULL
+        """
+    )
+    fetched_missing_files = q1(
+        """
+        SELECT COUNT(*)
+        FROM articles
+        WHERE fetch_status='fetched'
+          AND (html_path IS NULL OR text_path IS NULL)
+        """
+    )
+    failed_without_error = q1(
+        """
+        SELECT COUNT(*)
+        FROM articles
+        WHERE fetch_status='failed'
+          AND (fetch_error IS NULL OR fetch_error='')
+        """
+    )
+
     stats = {
         "db": str(DB_PATH),
         "articles": {
@@ -615,6 +642,11 @@ def cmd_status(args: argparse.Namespace) -> int:
             "failed": q1("SELECT COUNT(*) FROM articles WHERE fetch_status='failed'"),
             "oldest_published_at": q1("SELECT MIN(published_at) FROM articles WHERE published_at IS NOT NULL AND published_at NOT LIKE '2002-01-01%'"),
             "newest_published_at": q1("SELECT MAX(published_at) FROM articles WHERE published_at IS NOT NULL AND published_at NOT LIKE '2002-01-01%'"),
+        },
+        "consistency": {
+            "pending_with_files": pending_with_files or 0,
+            "fetched_missing_files": fetched_missing_files or 0,
+            "failed_without_error": failed_without_error or 0,
         },
         "fetch": {
             "http_used": q1("SELECT CAST(value AS INTEGER) FROM kv WHERE key='fetch.http_used'") or 0,
