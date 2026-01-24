@@ -615,23 +615,50 @@ def cmd_backfill(args: argparse.Namespace) -> int:
 
 
 def cmd_fetch(args: argparse.Namespace) -> int:
+    """Fetch pending URLs.
+
+    Supports parallel workers (thread pool) because urllib + Playwright calls are blocking.
+    Global rate limit is enforced across workers (approximate, best-effort).
+    """
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+
     conn = connect()
     rows = conn.execute(
         "SELECT url FROM articles WHERE fetch_status='pending' ORDER BY COALESCE(published_at, discovered_at) DESC LIMIT ?",
         (args.limit,),
     ).fetchall()
+    urls = [r["url"] for r in rows]
 
     fetched = 0
     failed = 0
 
-    for r in rows:
-        url = r["url"]
+    # Best-effort global rate limiting across workers.
+    rate_lock = threading.Lock()
+    next_ok = {"t": time.monotonic()}
+
+    def rate_wait() -> None:
+        # Ensure at most `args.rate` requests/sec across all workers.
+        interval = 1.0 / max(0.1, args.rate)
+        with rate_lock:
+            now = time.monotonic()
+            t = max(now, next_ok["t"])
+            sleep_s = t - now
+            next_ok["t"] = t + interval
+        if sleep_s > 0:
+            time.sleep(sleep_s)
+
+    def fetch_one(url: str) -> dict:
         try:
             fetch_method = "http"
+
+            # Primary HTTP attempt (rate-limited)
             try:
+                rate_wait()
                 raw = http_get(url, timeout=30)
             except Exception:
-                # Hard failure -> Playwright fallback
+                # Hard failure -> Playwright fallback (not rate-limited; expensive but rare)
                 raw = http_get_playwright(url)
                 fetch_method = "playwright"
 
@@ -648,44 +675,105 @@ def cmd_fetch(args: argparse.Namespace) -> int:
                     pub2 = extract_published(raw2) or pub
                     text2 = extract_main_text(raw2)
                     html_path, text_path, h, wc = store_content(pub2, url, raw2, text2)
-                    raw, title, pub, text = raw2, title2, pub2, text2
+                    title, pub, wc = title2, pub2, wc
                     fetch_method = "playwright"
                 except Exception:
                     pass
 
-            upsert_article(
-                conn,
-                url,
-                title=title,
-                published_at=pub,
-                fetched_at=now_iso(),
-                fetch_status="fetched",
-                fetch_method=fetch_method,
-                fetch_error=None,
-                html_path=html_path,
-                text_path=text_path,
-                content_sha256=h,
-                word_count=wc,
-            )
-            if fetch_method == "playwright":
-                bump_kv(conn, "fetch.playwright_used", 1)
-            else:
-                bump_kv(conn, "fetch.http_used", 1)
-
-            fetched += 1
+            return {
+                "ok": True,
+                "url": url,
+                "title": title,
+                "published_at": pub,
+                "fetch_method": fetch_method,
+                "html_path": html_path,
+                "text_path": text_path,
+                "content_sha256": h,
+                "word_count": wc,
+            }
         except Exception as e:
-            upsert_article(
-                conn,
-                url,
-                fetched_at=now_iso(),
-                fetch_status="failed",
-                fetch_error=str(e),
-            )
-            bump_kv(conn, "fetch.failed", 1)
-            failed += 1
+            return {"ok": False, "url": url, "error": str(e)}
 
-        conn.commit()
-        time.sleep(max(0.0, 1.0 / max(0.1, args.rate)))
+    workers = max(1, int(getattr(args, "workers", 1) or 1))
+
+    # workers=1 keeps behavior similar to the old sequential path (but still uses helper).
+    if workers == 1:
+        for url in urls:
+            res = fetch_one(url)
+            if res["ok"]:
+                upsert_article(
+                    conn,
+                    res["url"],
+                    title=res.get("title"),
+                    published_at=res.get("published_at"),
+                    fetched_at=now_iso(),
+                    fetch_status="fetched",
+                    fetch_method=res.get("fetch_method"),
+                    fetch_error=None,
+                    html_path=res.get("html_path"),
+                    text_path=res.get("text_path"),
+                    content_sha256=res.get("content_sha256"),
+                    word_count=res.get("word_count"),
+                )
+                if res.get("fetch_method") == "playwright":
+                    bump_kv(conn, "fetch.playwright_used", 1)
+                else:
+                    bump_kv(conn, "fetch.http_used", 1)
+                fetched += 1
+            else:
+                upsert_article(
+                    conn,
+                    res["url"],
+                    fetched_at=now_iso(),
+                    fetch_status="failed",
+                    fetch_error=res.get("error"),
+                )
+                bump_kv(conn, "fetch.failed", 1)
+                failed += 1
+            conn.commit()
+
+        print(f"Fetch done (fetched={fetched}, failed={failed})")
+        return 0
+
+    # Parallel worker pool
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = [ex.submit(fetch_one, url) for url in urls]
+        for fut in as_completed(futs):
+            res = fut.result()
+
+            if res["ok"]:
+                upsert_article(
+                    conn,
+                    res["url"],
+                    title=res.get("title"),
+                    published_at=res.get("published_at"),
+                    fetched_at=now_iso(),
+                    fetch_status="fetched",
+                    fetch_method=res.get("fetch_method"),
+                    fetch_error=None,
+                    html_path=res.get("html_path"),
+                    text_path=res.get("text_path"),
+                    content_sha256=res.get("content_sha256"),
+                    word_count=res.get("word_count"),
+                )
+                if res.get("fetch_method") == "playwright":
+                    bump_kv(conn, "fetch.playwright_used", 1)
+                else:
+                    bump_kv(conn, "fetch.http_used", 1)
+                fetched += 1
+            else:
+                upsert_article(
+                    conn,
+                    res["url"],
+                    fetched_at=now_iso(),
+                    fetch_status="failed",
+                    fetch_error=res.get("error"),
+                )
+                bump_kv(conn, "fetch.failed", 1)
+                failed += 1
+
+            # keep commits frequent to avoid large transactions
+            conn.commit()
 
     print(f"Fetch done (fetched={fetched}, failed={failed})")
     return 0
@@ -789,7 +877,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_f = sub.add_parser("fetch")
     p_f.add_argument("--limit", type=int, default=50)
-    p_f.add_argument("--rate", type=float, default=1.0, help="requests per second")
+    p_f.add_argument("--rate", type=float, default=1.0, help="requests per second (global, across workers)")
+    p_f.add_argument("--workers", type=int, default=1, help="parallel fetch workers (threads)")
 
     p_s = sub.add_parser("status")
     p_s.add_argument("--json", action="store_true")
