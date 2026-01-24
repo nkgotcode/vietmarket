@@ -625,11 +625,27 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     import threading
 
     conn = connect()
+    # Fetch ordering strategy:
+    # For backfill progress (make `oldest_published_at` move earlier), prefer *older-looking URLs*
+    # based on the /YYYY/MM/ segment in the article URL, rather than newest-first.
+    #
+    # Note: `published_at` is usually NULL for pending rows, so ordering purely by published_at
+    # won't help us reach older history.
     rows = conn.execute(
-        "SELECT url FROM articles WHERE fetch_status='pending' ORDER BY COALESCE(published_at, discovered_at) DESC LIMIT ?",
-        (args.limit,),
+        "SELECT url, discovered_at FROM articles WHERE fetch_status='pending' ORDER BY discovered_at ASC LIMIT ?",
+        (max(100, args.limit * 10),),
     ).fetchall()
-    urls = [r["url"] for r in rows]
+
+    def url_ym_key(u: str):
+        # Typical Vietstock/Fili pattern: https://vietstock.vn/YYYY/MM/... .htm
+        m = re.search(r"/(\d{4})/(\d{2})/", u)
+        if m:
+            return (int(m.group(1)), int(m.group(2)), u)
+        # Unknown format: push to the end.
+        return (9999, 99, u)
+
+    # Prefer oldest year/month first; tie-break by URL for stability.
+    urls = [r["url"] for r in sorted(rows, key=lambda r: url_ym_key(r["url"]))][: args.limit]
 
     fetched = 0
     failed = 0
