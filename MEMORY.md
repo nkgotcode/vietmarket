@@ -9,6 +9,7 @@
 - Node.js best practice on this Mac: use `nvm` as the single source of truth; avoid installing Node via Homebrew to prevent PATH conflicts.
 - Current baseline Node used for Clawdbot: v22.14.0 (npm 11.8.0), managed by nvm.
 - OpenClaw Gateway runs locally via LaunchAgent on port **18789** (Dashboard: http://127.0.0.1:18789/).
+- `python` is not available in PATH on this host (use `node`/shell for automations).
 - Memory search/indexing: SQLite **FTS5 currently unavailable** (`no such module: fts5`). Homebrew `node@22` install attempt failed on macOS 12 (“Tier 3”).
 
 ## Automation
