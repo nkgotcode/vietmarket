@@ -420,6 +420,8 @@ def cmd_rss(args: argparse.Namespace) -> int:
     skipped_old = 0
     skipped_dupe = 0
 
+    per_feed: list[dict] = []
+
     for row in feeds_rows:
         f_url = row["feed_url"]
         last_seen = (row["last_seen_published_at"] or "").strip() or None
@@ -428,25 +430,47 @@ def cmd_rss(args: argparse.Namespace) -> int:
         if not rss_url:
             continue
 
+        st = {
+            "feed_url": f_url,
+            "last_seen": last_seen,
+            "items_in_feed": 0,
+            "scanned": 0,
+            "inserted": 0,
+            "meta_filled": 0,
+            "skipped_dupe": 0,
+            "skipped_old_early": 0,
+            "error": None,
+            "max_pub": None,
+        }
+
         try:
             xml = http_get(rss_url, timeout=15)
-        except Exception:
+        except Exception as e:
             feeds_err += 1
+            st["error"] = (str(e) or "rss fetch error")[:120]
             conn.execute(
                 "UPDATE feeds SET last_checked_at=? WHERE feed_url=?",
                 (now_iso(), f_url),
             )
+            per_feed.append(st)
             continue
 
         feeds_ok += 1
         items = parse_rss_xml(xml)
+        st["items_in_feed"] = len(items)
 
         # Feeds are usually newest-first. Stop early once we reach items we have already seen.
         for it in items[: args.limit]:
             scanned += 1
+            st["scanned"] += 1
+
             pub = it.get("published_at")
+            if pub and (not st["max_pub"] or pub > st["max_pub"]):
+                st["max_pub"] = pub
+
             if last_seen and pub and pub <= last_seen:
                 skipped_old += 1
+                st["skipped_old_early"] += 1
                 break
 
             url = it["url"]
@@ -459,9 +483,11 @@ def cmd_rss(args: argparse.Namespace) -> int:
             )
             if cur.rowcount == 1:
                 inserted += 1
+                st["inserted"] += 1
                 continue
 
             skipped_dupe += 1
+            st["skipped_dupe"] += 1
 
             # Existing row: only fill missing metadata; avoid a write if nothing to fill.
             cur2 = conn.execute(
@@ -475,17 +501,15 @@ def cmd_rss(args: argparse.Namespace) -> int:
             )
             if cur2.rowcount == 1:
                 meta_filled += 1
+                st["meta_filled"] += 1
 
         # update feed bookkeeping
-        max_pub = None
-        for it in items:
-            if it.get("published_at"):
-                if not max_pub or it["published_at"] > max_pub:
-                    max_pub = it["published_at"]
         conn.execute(
             "UPDATE feeds SET last_checked_at=?, last_seen_published_at=COALESCE(?, last_seen_published_at) WHERE feed_url=?",
-            (now_iso(), max_pub, f_url),
+            (now_iso(), st["max_pub"], f_url),
         )
+
+        per_feed.append(st)
 
     conn.commit()
 
@@ -496,6 +520,32 @@ def cmd_rss(args: argparse.Namespace) -> int:
         f"inserted={inserted}, meta_filled={meta_filled}, "
         f"skipped_dupe={skipped_dupe}, skipped_old_early={skipped_old}"
     )
+
+    # Full per-feed breakdown (sorted by inserted desc, then scanned desc).
+    def k(x: dict):
+        return (-int(x.get("inserted") or 0), -int(x.get("scanned") or 0), x.get("feed_url") or "")
+
+    for st in sorted(per_feed, key=k):
+        # Shorten URL display a bit.
+        f = st["feed_url"]
+        if f.startswith("https://vietstock.vn/"):
+            f_disp = f[len("https://vietstock.vn/"):]
+        else:
+            f_disp = f
+
+        if st.get("error"):
+            print(f"- FEED {f_disp}: ERROR={st['error']}")
+            continue
+
+        print(
+            "- FEED "
+            + f_disp
+            + ": "
+            + f"items={st['items_in_feed']}, scanned={st['scanned']}, inserted={st['inserted']}, "
+            + f"meta_filled={st['meta_filled']}, skipped_dupe={st['skipped_dupe']}, "
+            + f"stopped_old={st['skipped_old_early'] > 0}, last_seen={st['last_seen'] or '-'}, max_pub={st['max_pub'] or '-'}"
+        )
+
     return 0
 
 
