@@ -3,6 +3,7 @@ node_modules/
 
 # runtime scratch
 tmp/
+backups/
 
 # python
 __pycache__/
@@ -16,3 +17,6 @@ USER.md
 TOOLS.md
 HEARTBEAT.md
 BOOTSTRAP.md
+
+# local helper scripts (workspace root only)
+/scripts/

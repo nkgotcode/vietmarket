@@ -397,12 +397,14 @@ def parse_rss_xml(xml_bytes: bytes) -> list[dict]:
 
 def cmd_rss(args: argparse.Namespace) -> int:
     conn = connect()
-    feeds = [row["feed_url"] for row in conn.execute("SELECT feed_url FROM feeds").fetchall()]
+    feeds_rows = conn.execute(
+        "SELECT feed_url, last_seen_published_at FROM feeds"
+    ).fetchall()
 
     # read directly from local relay cached files (faster than refetching public)
     # Use the relay index mapping to locate /feeds/*.xml
     idx = http_get(RELAY_INDEX).decode("utf-8", errors="ignore")
-    mapping = {}
+    mapping: dict[str, str] = {}
     for line in idx.splitlines():
         if "->" not in line:
             continue
@@ -410,31 +412,69 @@ def cmd_rss(args: argparse.Namespace) -> int:
         if left.startswith("http") and right.startswith("/feeds/"):
             mapping[left] = "http://127.0.0.1:18999" + right
 
-    total = 0
-    for f_url in feeds:
+    feeds_ok = 0
+    feeds_err = 0
+    scanned = 0
+    inserted = 0
+    meta_filled = 0
+    skipped_old = 0
+    skipped_dupe = 0
+
+    for row in feeds_rows:
+        f_url = row["feed_url"]
+        last_seen = (row["last_seen_published_at"] or "").strip() or None
+
         rss_url = mapping.get(f_url)
         if not rss_url:
             continue
+
         try:
             xml = http_get(rss_url, timeout=15)
-        except Exception as e:
-            conn.execute("UPDATE feeds SET last_checked_at=?, title=?, last_seen_published_at=? WHERE feed_url=?", (now_iso(), None, None, f_url))
+        except Exception:
+            feeds_err += 1
+            conn.execute(
+                "UPDATE feeds SET last_checked_at=? WHERE feed_url=?",
+                (now_iso(), f_url),
+            )
             continue
 
+        feeds_ok += 1
         items = parse_rss_xml(xml)
+
+        # Feeds are usually newest-first. Stop early once we reach items we have already seen.
         for it in items[: args.limit]:
+            scanned += 1
+            pub = it.get("published_at")
+            if last_seen and pub and pub <= last_seen:
+                skipped_old += 1
+                break
+
             url = it["url"]
-            # Never overwrite an already-fetched/failed article back to pending.
-            conn.execute(
-                "INSERT OR IGNORE INTO articles(url, title, published_at, source, feed_url, fetch_status) VALUES (?, ?, ?, 'rss', ?, 'pending')",
-                (url, it.get("title"), it.get("published_at"), f_url),
+
+            # Insert new row only; never clobber fetch_status.
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO articles(url, title, published_at, source, feed_url, fetch_status) "
+                "VALUES (?, ?, ?, 'rss', ?, 'pending')",
+                (url, it.get("title"), pub, f_url),
             )
-            # Fill missing metadata but keep existing fetch_status.
-            conn.execute(
-                "UPDATE articles SET title=COALESCE(title, ?), published_at=COALESCE(published_at, ?), source=COALESCE(source, 'rss'), feed_url=COALESCE(feed_url, ?) WHERE url=?",
-                (it.get("title"), it.get("published_at"), f_url, url),
+            if cur.rowcount == 1:
+                inserted += 1
+                continue
+
+            skipped_dupe += 1
+
+            # Existing row: only fill missing metadata; avoid a write if nothing to fill.
+            cur2 = conn.execute(
+                "UPDATE articles SET "
+                " title=COALESCE(title, ?), "
+                " published_at=COALESCE(published_at, ?), "
+                " source=COALESCE(source, 'rss'), "
+                " feed_url=COALESCE(feed_url, ?) "
+                "WHERE url=? AND (title IS NULL OR published_at IS NULL OR feed_url IS NULL OR source IS NULL)",
+                (it.get("title"), pub, f_url, url),
             )
-            total += 1
+            if cur2.rowcount == 1:
+                meta_filled += 1
 
         # update feed bookkeeping
         max_pub = None
@@ -443,12 +483,19 @@ def cmd_rss(args: argparse.Namespace) -> int:
                 if not max_pub or it["published_at"] > max_pub:
                     max_pub = it["published_at"]
         conn.execute(
-            "UPDATE feeds SET last_checked_at=?, last_seen_published_at=? WHERE feed_url=?",
+            "UPDATE feeds SET last_checked_at=?, last_seen_published_at=COALESCE(?, last_seen_published_at) WHERE feed_url=?",
             (now_iso(), max_pub, f_url),
         )
-        conn.commit()
 
-    print(f"RSS enqueue done (upserted ~{total} items)")
+    conn.commit()
+
+    # Meaningful summary: what actually changed.
+    print(
+        "RSS enqueue: "
+        f"feeds_ok={feeds_ok}, feeds_err={feeds_err}, scanned={scanned}, "
+        f"inserted={inserted}, meta_filled={meta_filled}, "
+        f"skipped_dupe={skipped_dupe}, skipped_old_early={skipped_old}"
+    )
     return 0
 
 
