@@ -9,7 +9,8 @@
 - Node.js best practice on this Mac: use `nvm` as the single source of truth; avoid installing Node via Homebrew to prevent PATH conflicts.
 - Current baseline Node used for Clawdbot: v22.14.0 (npm 11.8.0), managed by nvm.
 - OpenClaw Gateway runs locally via LaunchAgent on port **18789** (Dashboard: http://127.0.0.1:18789/).
-- `python` is not available in PATH on this host (use `node`/shell for automations).
+- Python: `python3` is available via Homebrew; `python` is shimmed to `python3` (symlink in `/usr/local/bin/python` + zsh alias) for convenience.
+- Playwright is installed on the Mac mini (Node module present; browser binaries cached under `~/.cache/ms-playwright/`).
 - Memory search/indexing: SQLite **FTS5 currently unavailable** (`no such module: fts5`). Homebrew `node@22` install attempt failed on macOS 12 (“Tier 3”).
 
 ## Automation
