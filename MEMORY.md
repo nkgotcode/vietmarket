@@ -30,6 +30,17 @@
   - Job id: fc2e2adc-fe91-4547-b09a-0b7235eb3914
   - Schedule: every 15 minutes (Asia/Ho_Chi_Minh)
 
+- Vietstock archive maintenance cron job (RSS ingest + fetch):
+  - Job name: Vietstock archive: RSS ingest + fetch (15m)
+  - Job id: 04462c22-984f-422a-ab9d-d078a0cd286d
+  - Schedule: every 15 minutes (Asia/Ho_Chi_Minh)
+
+- Vietstock archive backfill crawl cron job:
+  - Job name: Vietstock archive: backfill crawl (hourly)
+  - Job id: 7fcaabc5-3f81-4456-bd6b-249233970633
+  - Schedule: hourly (Asia/Ho_Chi_Minh)
+  - Note: if `kv.backfill.done`/`control.backfill_done` is set, the backfill step is skipped.
+
 ## News tracking (local-first)
 - Vietstock RSS relay/cache served locally at http://127.0.0.1:18999/ (needed because Vietstock blocks blogwatcher/Go default user-agent).
 - Start the relay server via launchd (LaunchAgent: ~/Library/LaunchAgents/com.clawdbot.vietstock-relay.plist).
