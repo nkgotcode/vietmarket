@@ -44,4 +44,5 @@
 ## News tracking (local-first)
 - Vietstock RSS relay/cache served locally at http://127.0.0.1:18999/ (needed because Vietstock blocks blogwatcher/Go default user-agent).
 - Start the relay server via launchd (LaunchAgent: ~/Library/LaunchAgents/com.clawdbot.vietstock-relay.plist).
+- If Vietstock archive RSS ingest shows `Connection refused` / `URLError: [Errno 61]` when fetching the relay index at `http://127.0.0.1:18999/`, the relay server is likely not running/not listening (distinct from `vietstock-relay-refresh`, which only refreshes cache).
 - Plan: local-only archive first (HTML + cleaned text + SQLite), add syncing + dashboard later via Clawdbot Gateway.
