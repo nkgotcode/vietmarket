@@ -10,6 +10,7 @@
 - Current baseline Node used for Clawdbot: v22.14.0 (npm 11.8.0), managed by nvm.
 - OpenClaw Gateway runs locally via LaunchAgent on port **18789** (Dashboard: http://127.0.0.1:18789/).
 - Python: `python3` is available via Homebrew; `python` is shimmed to `python3` (symlink in `/usr/local/bin/python` + zsh alias) for convenience.
+- System Python does **not** have `pytz` installed; prefer `zoneinfo` or shell `date`, or install `pytz` explicitly if needed.
 - Playwright is installed on the Mac mini (Node module present; browser binaries cached under `~/.cache/ms-playwright/`).
 - Memory search/indexing: SQLite **FTS5 currently unavailable** (`no such module: fts5`). Homebrew `node@22` install attempt failed on macOS 12 (“Tier 3”).
 
