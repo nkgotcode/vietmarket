@@ -4,6 +4,7 @@ node_modules/
 # runtime scratch
 tmp/
 backups/
+exports/
 
 # python
 __pycache__/
