@@ -49,3 +49,7 @@
 - `vietstock-archive status --json` does **not** accept a positional path argument (e.g. `.`); run it from the intended working directory.
 - Day exports (for sharing/reading outside chat) are stored under: `/Users/lenamkhanh/clawd/exports/vietstock/YYYY-MM-DD/` (typically `*-full.md` + `index.json`, optionally zipped).
 - Plan: local-only archive first (HTML + cleaned text + SQLite), add syncing + dashboard later via Clawdbot Gateway.
+
+## Simplize market data (reverse-engineering)
+- OHLCV endpoint works (public): `https://api2.simplize.vn/api/historical/prices/ohlcv` (params include `ticker`, `type`, `interval`, `size`, `to`).
+- Financial statements endpoints referenced in the frontend (`/api/company/fi/*`, `/api/company/fi/period/select`, `/api/company/view/fi-data`) did **not** work unauthenticated in probing (404/405; POST to `/api/company/view/fi-data` returned 500) → likely requires auth and/or specific payload/headers.
