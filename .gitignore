@@ -20,4 +20,5 @@ HEARTBEAT.md
 BOOTSTRAP.md
 
 # local helper scripts (workspace root only)
-/scripts/
+/scripts/*
+!/scripts/simplize_fi_fetch.mjs
