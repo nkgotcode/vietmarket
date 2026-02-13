@@ -22,3 +22,4 @@ BOOTSTRAP.md
 # local helper scripts (workspace root only)
 /scripts/*
 !/scripts/simplize_fi_fetch.mjs
+!/scripts/simplize_ingest.mjs
