@@ -12,13 +12,15 @@ import {
   replaceFiLatest,
   rebuildContextLatest,
 } from '../lib/registry_sqlite.mjs';
-import { linkSymbolsFromTitle } from '../lib/news_symbol_linker.mjs';
+import { linkSymbolsFromText, linkSymbolsFromTitle } from '../lib/news_symbol_linker.mjs';
 
 function parseArgs(argv) {
   const out = {
     simplizeDb: 'data/simplize/simplize.db',
     simplizeUniverse: 'data/simplize/universe.latest.json',
     vietstockExportsDir: 'exports/vietstock',
+    vietstockDb: '/Users/lenamkhanh/.clawdbot/vietstock-archive/archive.sqlite',
+    vietstockDays: 30,
     registryDb: 'data/registry/market_registry.db',
   };
   for (let i = 0; i < argv.length; i++) {
@@ -26,6 +28,8 @@ function parseArgs(argv) {
     if (a === '--simplize-db') { out.simplizeDb = String(v); i++; }
     else if (a === '--simplize-universe') { out.simplizeUniverse = String(v); i++; }
     else if (a === '--vietstock-exports-dir') { out.vietstockExportsDir = String(v); i++; }
+    else if (a === '--vietstock-db') { out.vietstockDb = String(v); i++; }
+    else if (a === '--vietstock-days') { out.vietstockDays = Number(v); i++; }
     else if (a === '--registry-db') { out.registryDb = String(v); i++; }
   }
   return out;
@@ -44,6 +48,16 @@ async function listIndexJson(root) {
   }
   await walk(root);
   return files;
+}
+
+async function safeReadText(p, maxChars = 80000) {
+  if (!p) return '';
+  try {
+    const buf = await readFile(p);
+    return buf.toString('utf8', 0, Math.min(buf.length, maxChars));
+  } catch {
+    return '';
+  }
 }
 
 async function main() {
@@ -93,7 +107,7 @@ async function main() {
 
   replaceFiLatest(reg, fiLatestRows);
 
-  // ingest Vietstock article indexes + inferred symbols
+  // ingest Vietstock exports (index.json) + inferred symbols (title + body)
   const indexes = await listIndexJson(path.resolve(args.vietstockExportsDir));
   let articleCount = 0;
   let links = 0;
@@ -113,15 +127,58 @@ async function main() {
       });
       articleCount += 1;
 
-      const linksFound = linkSymbolsFromTitle(a.title, knownTickers);
+      const body = await safeReadText(a.text_path);
+      const linksFound = [
+        ...linkSymbolsFromTitle(a.title, knownTickers),
+        ...linkSymbolsFromText(body, knownTickers),
+      ];
       for (const hit of linksFound) {
         upsertSymbol(reg, { ticker: hit.ticker, seenAt: now });
-        upsertSymbolSource(reg, { ticker: hit.ticker, source: 'vietstock_title_extract', sourceRef: file, seenAt: now });
+        upsertSymbolSource(reg, { ticker: hit.ticker, source: 'vietstock_extract', sourceRef: file, seenAt: now });
         upsertArticleSymbol(reg, { url: a.url, ticker: hit.ticker, confidence: hit.confidence, method: hit.method });
         links += 1;
       }
     }
   }
+
+  // ingest Vietstock archive sqlite for broader coverage
+  let archiveArticles = 0;
+  let archiveLinks = 0;
+  try {
+    const vdb = new DatabaseSync(path.resolve(args.vietstockDb));
+    const rows = vdb.prepare(`
+      SELECT url, title, published_at AS publishedAt, word_count AS wordCount, text_path AS textPath
+      FROM articles
+      WHERE fetch_status IN ('ok','fetched')
+        AND title IS NOT NULL
+        AND url IS NOT NULL
+        AND published_at >= datetime('now', ?)
+    `).all(`-${Number(args.vietstockDays) || 30} day`);
+
+    for (const r of rows) {
+      upsertArticle(reg, {
+        url: r.url,
+        title: r.title,
+        publishedAt: r.publishedAt || null,
+        wordCount: r.wordCount || null,
+        source: 'vietstock',
+        ingestedAt: now,
+      });
+      archiveArticles += 1;
+      const body = await safeReadText(r.textPath);
+      const hits = [
+        ...linkSymbolsFromTitle(r.title, knownTickers),
+        ...linkSymbolsFromText(body, knownTickers),
+      ];
+      for (const hit of hits) {
+        upsertSymbol(reg, { ticker: hit.ticker, seenAt: now });
+        upsertSymbolSource(reg, { ticker: hit.ticker, source: 'vietstock_extract', sourceRef: 'archive.sqlite', seenAt: now });
+        upsertArticleSymbol(reg, { url: r.url, ticker: hit.ticker, confidence: hit.confidence, method: hit.method });
+        archiveLinks += 1;
+      }
+    }
+    vdb.close();
+  } catch {}
 
   rebuildContextLatest(reg, now);
 
@@ -138,7 +195,9 @@ async function main() {
     universeTickers: uniTickers.length,
     indexesScanned: indexes.length,
     articlesIngested: articleCount,
+    archiveArticlesIngested: archiveArticles,
     articleSymbolLinks: links,
+    archiveArticleSymbolLinks: archiveLinks,
   }, null, 2));
 }
 
