@@ -28,3 +28,5 @@ BOOTSTRAP.md
 !/scripts/simplize_publish.mjs
 !/scripts/simplize_api.mjs
 !/scripts/simplize_api_daemon.mjs
+!/scripts/simplize_sqlite_sync.mjs
+!/scripts/simplize_api_watchdog.mjs

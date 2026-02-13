@@ -12,6 +12,7 @@ function parseArgs(argv) {
     size: 12,
     outDir: 'data/simplize',
     token: process.env.SIMPLIZE_BEARER || null,
+    tokenFile: null,
     allowFallbackToQ: true,
   };
 
@@ -36,10 +37,13 @@ function parseArgs(argv) {
     } else if (a === '--token') {
       out.token = String(v || '').trim() || null;
       i++;
+    } else if (a === '--token-file') {
+      out.tokenFile = String(v || '').trim() || null;
+      i++;
     } else if (a === '--no-fallback-to-q') {
       out.allowFallbackToQ = false;
     } else if (a === '--help' || a === '-h') {
-      console.log('Usage: node scripts/simplize_ingest.mjs --tickers FPT,VNM --period Q --size 12 --out-dir data/simplize [--token <bearer>] [--no-fallback-to-q]');
+      console.log('Usage: node scripts/simplize_ingest.mjs --tickers FPT,VNM --period Q --size 12 --out-dir data/simplize [--token <bearer>] [--token-file <path>] [--no-fallback-to-q]');
       process.exit(0);
     }
   }
@@ -86,15 +90,20 @@ async function main() {
   const state = await readJson(stateFile, { hashes: {} });
   const results = [];
 
+  let token = args.token;
+  if (!token && args.tokenFile) {
+    token = (await readFile(path.resolve(args.tokenFile), 'utf8').catch(() => '')).trim() || null;
+  }
+
   const periodDecision = resolveEffectivePeriod({
     requestedPeriod: args.period,
-    hasAuthToken: Boolean(args.token),
+    hasAuthToken: Boolean(token),
     allowFallback: args.allowFallbackToQ,
   });
 
   for (const ticker of args.tickers) {
-    const requestOptions = args.token
-      ? { headers: { authorization: `Bearer ${args.token}` } }
+    const requestOptions = token
+      ? { headers: { authorization: `Bearer ${token}` } }
       : {};
 
     const block = await fetchTickerBlock({
