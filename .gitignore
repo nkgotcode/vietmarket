@@ -30,3 +30,4 @@ BOOTSTRAP.md
 !/scripts/simplize_api_daemon.mjs
 !/scripts/simplize_sqlite_sync.mjs
 !/scripts/simplize_api_watchdog.mjs
+!/scripts/simplize_expand_market.mjs
