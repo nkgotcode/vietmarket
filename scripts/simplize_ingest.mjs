@@ -3,6 +3,7 @@
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { fetchTickerBlock, blockHash, normalizeBlock } from '../lib/simplize_pipeline.mjs';
+import { resolveEffectivePeriod } from '../lib/simplize_config.mjs';
 
 function parseArgs(argv) {
   const out = {
@@ -10,6 +11,8 @@ function parseArgs(argv) {
     period: 'Q',
     size: 12,
     outDir: 'data/simplize',
+    token: process.env.SIMPLIZE_BEARER || null,
+    allowFallbackToQ: true,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -30,8 +33,13 @@ function parseArgs(argv) {
     } else if (a === '--out-dir') {
       out.outDir = String(v || out.outDir);
       i++;
+    } else if (a === '--token') {
+      out.token = String(v || '').trim() || null;
+      i++;
+    } else if (a === '--no-fallback-to-q') {
+      out.allowFallbackToQ = false;
     } else if (a === '--help' || a === '-h') {
-      console.log('Usage: node scripts/simplize_ingest.mjs --tickers FPT,VNM --period Q --size 12 --out-dir data/simplize');
+      console.log('Usage: node scripts/simplize_ingest.mjs --tickers FPT,VNM --period Q --size 12 --out-dir data/simplize [--token <bearer>] [--no-fallback-to-q]');
       process.exit(0);
     }
   }
@@ -67,41 +75,65 @@ async function main() {
 
   const outDir = path.resolve(args.outDir);
   const rawDir = path.join(outDir, 'raw');
+  const dayDir = path.join(rawDir, now.toISOString().slice(0, 10));
   const normDir = path.join(outDir, 'normalized');
   const stateFile = path.join(outDir, 'state.json');
 
   await mkdir(rawDir, { recursive: true });
+  await mkdir(dayDir, { recursive: true });
   await mkdir(normDir, { recursive: true });
 
   const state = await readJson(stateFile, { hashes: {} });
   const results = [];
 
+  const periodDecision = resolveEffectivePeriod({
+    requestedPeriod: args.period,
+    hasAuthToken: Boolean(args.token),
+    allowFallback: args.allowFallbackToQ,
+  });
+
   for (const ticker of args.tickers) {
-    const block = await fetchTickerBlock({ ticker, period: args.period, size: args.size });
+    const requestOptions = args.token
+      ? { headers: { authorization: `Bearer ${args.token}` } }
+      : {};
+
+    const block = await fetchTickerBlock({
+      ticker,
+      period: periodDecision.effectivePeriod,
+      size: args.size,
+      requestOptions,
+    });
+
     const hash = blockHash(block);
-    const k = keyOf({ ticker, period: args.period });
+    const k = keyOf({ ticker, period: periodDecision.effectivePeriod });
     const prevHash = state.hashes[k] ?? null;
     const changed = prevHash !== hash;
 
-    const latestFile = path.join(rawDir, `${ticker}_${args.period}_latest.json`);
+    const latestFile = path.join(rawDir, `${ticker}_${periodDecision.effectivePeriod}_latest.json`);
     await atomicWrite(latestFile, JSON.stringify(block, null, 2));
 
     if (changed) {
-      const snapFile = path.join(rawDir, `${ticker}_${args.period}_${stamp}.json`);
+      const snapFile = path.join(dayDir, `${ticker}_${periodDecision.effectivePeriod}_${stamp}.json`);
       await atomicWrite(snapFile, JSON.stringify(block, null, 2));
 
       const rows = normalizeBlock(block);
-      const ndjsonPath = path.join(normDir, `${ticker}_${args.period}.ndjson`);
+      const ndjsonPath = path.join(normDir, `${ticker}_${periodDecision.effectivePeriod}.ndjson`);
       const payload = rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '');
       if (payload) {
-        // append-ish via read + write atomically for portability
         const prev = await readFile(ndjsonPath, 'utf8').catch(() => '');
         await atomicWrite(ndjsonPath, prev + payload);
       }
     }
 
     state.hashes[k] = hash;
-    results.push({ ticker, period: args.period, changed, hash });
+    results.push({
+      ticker,
+      requestedPeriod: args.period,
+      effectivePeriod: periodDecision.effectivePeriod,
+      fallbackApplied: periodDecision.fallbackApplied,
+      changed,
+      hash,
+    });
   }
 
   await atomicWrite(stateFile, JSON.stringify(state, null, 2));
@@ -110,6 +142,7 @@ async function main() {
     ok: true,
     at: now.toISOString(),
     outDir,
+    periodDecision,
     results,
   }, null, 2));
 }
