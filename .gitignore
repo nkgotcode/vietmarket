@@ -27,3 +27,4 @@ BOOTSTRAP.md
 !/scripts/simplize_healthcheck.mjs
 !/scripts/simplize_publish.mjs
 !/scripts/simplize_api.mjs
+!/scripts/simplize_api_daemon.mjs
