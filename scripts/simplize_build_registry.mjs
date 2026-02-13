@@ -9,19 +9,10 @@ import {
   upsertSymbolSource,
   upsertArticle,
   upsertArticleSymbol,
+  replaceFiLatest,
+  rebuildContextLatest,
 } from '../lib/registry_sqlite.mjs';
-
-const STOPWORDS = new Set(['ETF','USD','VND','VNINDEX','HNX','HOSE','UPCOM','CTCP','VNI']);
-
-function extractTickers(text) {
-  const out = new Set();
-  for (const m of String(text || '').matchAll(/\b[A-Z]{2,5}\b/g)) {
-    const tk = m[0].toUpperCase();
-    if (STOPWORDS.has(tk)) continue;
-    out.add(tk);
-  }
-  return [...out];
-}
+import { linkSymbolsFromTitle } from '../lib/news_symbol_linker.mjs';
 
 function parseArgs(argv) {
   const out = {
@@ -72,16 +63,35 @@ async function main() {
     upsertSymbolSource(reg, { ticker: t, source: 'simplize_universe', sourceRef: 'universe.latest.json', seenAt: now });
   }
 
-  // ingest Simplize DB distinct tickers
+  // ingest Simplize DB distinct tickers + latest FI points
+  const knownTickers = new Set(uniTickers);
+  let fiLatestRows = [];
   try {
     const sdb = new DatabaseSync(path.resolve(args.simplizeDb));
     const rows = sdb.prepare('SELECT DISTINCT ticker, period FROM fi_points').all();
     for (const r of rows) {
+      knownTickers.add(r.ticker);
       upsertSymbol(reg, { ticker: r.ticker, seenAt: now });
       upsertSymbolSource(reg, { ticker: r.ticker, source: 'simplize_fi_points', sourceRef: r.period, seenAt: now });
     }
+
+    fiLatestRows = sdb.prepare(`
+      SELECT f.ticker, f.period, f.statement, f.periodDate, f.metric, f.value, f.fetchedAt
+      FROM fi_points f
+      JOIN (
+        SELECT ticker, period, statement, MAX(periodDate) AS maxPeriodDate
+        FROM fi_points
+        GROUP BY ticker, period, statement
+      ) x
+      ON f.ticker = x.ticker
+      AND f.period = x.period
+      AND f.statement = x.statement
+      AND f.periodDate = x.maxPeriodDate
+    `).all();
     sdb.close();
   } catch {}
+
+  replaceFiLatest(reg, fiLatestRows);
 
   // ingest Vietstock article indexes + inferred symbols
   const indexes = await listIndexJson(path.resolve(args.vietstockExportsDir));
@@ -103,23 +113,28 @@ async function main() {
       });
       articleCount += 1;
 
-      const tks = extractTickers(a.title);
-      for (const tk of tks) {
-        upsertSymbol(reg, { ticker: tk, seenAt: now });
-        upsertSymbolSource(reg, { ticker: tk, source: 'vietstock_title_extract', sourceRef: file, seenAt: now });
-        upsertArticleSymbol(reg, { url: a.url, ticker: tk, confidence: 0.55, method: 'title_regex' });
+      const linksFound = linkSymbolsFromTitle(a.title, knownTickers);
+      for (const hit of linksFound) {
+        upsertSymbol(reg, { ticker: hit.ticker, seenAt: now });
+        upsertSymbolSource(reg, { ticker: hit.ticker, source: 'vietstock_title_extract', sourceRef: file, seenAt: now });
+        upsertArticleSymbol(reg, { url: a.url, ticker: hit.ticker, confidence: hit.confidence, method: hit.method });
         links += 1;
       }
     }
   }
 
+  rebuildContextLatest(reg, now);
+
   const symbolCount = reg.prepare('SELECT COUNT(*) c FROM symbols').get().c;
+  const contextCount = reg.prepare('SELECT COUNT(*) c FROM symbol_context_latest').get().c;
   reg.close();
 
   console.log(JSON.stringify({
     ok: true,
     registryDb: registryPath,
     symbols: symbolCount,
+    contextRows: contextCount,
+    fiLatestRows: fiLatestRows.length,
     universeTickers: uniTickers.length,
     indexesScanned: indexes.length,
     articlesIngested: articleCount,
