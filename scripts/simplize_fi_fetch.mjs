@@ -8,14 +8,18 @@
  *   node scripts/simplize_fi_fetch.mjs -t FPT -p Y -s 8 --pretty
  */
 
+import { writeFile } from 'node:fs/promises';
+
 const BASE = 'https://api2.simplize.vn';
 
 function parseArgs(argv) {
   const out = {
     ticker: 'FPT',
+    tickers: null,
     period: 'Q',
     size: 12,
     pretty: true,
+    save: null,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -24,11 +28,20 @@ function parseArgs(argv) {
     if (a === '--ticker' || a === '-t') {
       out.ticker = String(v || '').toUpperCase();
       i++;
+    } else if (a === '--tickers') {
+      out.tickers = String(v || '')
+        .split(',')
+        .map((x) => x.trim().toUpperCase())
+        .filter(Boolean);
+      i++;
     } else if (a === '--period' || a === '-p') {
       out.period = String(v || '').toUpperCase();
       i++;
     } else if (a === '--size' || a === '-s') {
       out.size = Number(v || 12);
+      i++;
+    } else if (a === '--save') {
+      out.save = String(v || '').trim() || null;
       i++;
     } else if (a === '--pretty') {
       out.pretty = true;
@@ -38,6 +51,10 @@ function parseArgs(argv) {
       printHelp();
       process.exit(0);
     }
+  }
+
+  if (out.tickers && out.tickers.length > 0) {
+    out.ticker = out.tickers[0];
   }
 
   if (!out.ticker) throw new Error('ticker is required');
@@ -57,6 +74,8 @@ function printHelp() {
 `  -t, --ticker <SYMBOL>   Stock ticker (default: FPT)\n` +
 `  -p, --period <Q|Y>      Period: Q (quarter) or Y (year) (default: Q)\n` +
 `  -s, --size <N>          Number of rows (default: 12)\n` +
+`      --tickers <A,B,C>   Batch mode: comma-separated tickers\n` +
+`      --save <file>       Save output JSON to file\n` +
 `      --pretty            Pretty JSON output (default)\n` +
 `      --compact           Compact JSON output\n` +
 `  -h, --help              Show this help\n`);
@@ -104,10 +123,7 @@ function summarizeEndpoint(result) {
   };
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const { ticker, period, size, pretty } = args;
-
+async function fetchTickerBlock({ ticker, period, size }) {
   const paths = {
     periodSelect: `/api/company/fi/period/select/${ticker}?period=${period}`,
     structureOverview: `/api/company/fi/structure/overview/${ticker}?period=${period}`,
@@ -127,24 +143,46 @@ async function main() {
     Object.entries(raw).map(([k, v]) => [k, summarizeEndpoint(v)])
   );
 
+  return {
+    summary,
+    data: Object.fromEntries(
+      Object.entries(raw).map(([k, v]) => [
+        k,
+        {
+          status: v.status,
+          ok: v.ok,
+          url: v.url,
+          body: v.body,
+        },
+      ])
+    ),
+  };
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const { ticker, tickers, period, size, pretty, save } = args;
+  const tickerList = tickers && tickers.length ? tickers : [ticker];
+
+  const batchEntries = await Promise.all(
+    tickerList.map(async (tk) => [tk, await fetchTickerBlock({ ticker: tk, period, size })])
+  );
+  const batch = Object.fromEntries(batchEntries);
+
   const output = {
-    input: { ticker, period, size },
+    input: { ticker, tickers: tickerList, period, size },
     note:
       period === 'Y'
         ? 'Yearly statement endpoints may require auth (401 on is/bs/cf/ratio), while periodSelect can still return options.'
         : 'Quarterly endpoints are generally public for supported tickers.',
-    summary,
-    data: Object.fromEntries(
-      Object.entries(raw).map(([k, v]) => [k, {
-        status: v.status,
-        ok: v.ok,
-        url: v.url,
-        body: v.body,
-      }])
-    ),
+    batch,
   };
 
-  process.stdout.write(JSON.stringify(output, null, pretty ? 2 : 0) + '\n');
+  const json = JSON.stringify(output, null, pretty ? 2 : 0);
+  if (save) {
+    await writeFile(save, json + '\n', 'utf8');
+  }
+  process.stdout.write(json + '\n');
 }
 
 main().catch((err) => {
