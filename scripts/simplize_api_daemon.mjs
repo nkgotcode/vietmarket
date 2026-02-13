@@ -11,6 +11,7 @@ function parseArgs(argv) {
     port: 18991,
     source: 'data/simplize/publish/latest.json',
     dbFile: 'data/simplize/simplize.db',
+    registryDbFile: 'data/registry/market_registry.db',
     pidFile: 'tmp/simplize-api.pid',
     logFile: 'tmp/simplize-api.log',
   };
@@ -29,6 +30,9 @@ function parseArgs(argv) {
       i++;
     } else if (a === '--db-file') {
       out.dbFile = String(v || out.dbFile);
+      i++;
+    } else if (a === '--registry-db-file') {
+      out.registryDbFile = String(v || out.registryDbFile);
       i++;
     } else if (a === '--pid-file') {
       out.pidFile = String(v || out.pidFile);
@@ -54,6 +58,7 @@ Options:
   --port <n>         API port (default: 18991)
   --source <file>    Publish JSON source (default: data/simplize/publish/latest.json)
   --db-file <file>   SQLite DB file (default: data/simplize/simplize.db)
+  --registry-db-file <file> Registry DB file (default: data/registry/market_registry.db)
   --pid-file <file>  PID file (default: tmp/simplize-api.pid)
   --log-file <file>  Log file (default: tmp/simplize-api.log)
 `
@@ -85,6 +90,7 @@ async function start(opts) {
   const logPath = path.resolve(opts.logFile);
   const source = path.resolve(opts.source);
   const dbFile = path.resolve(opts.dbFile);
+  const registryDbFile = path.resolve(opts.registryDbFile);
 
   await mkdir(path.dirname(pidPath), { recursive: true });
   await mkdir(path.dirname(logPath), { recursive: true });
@@ -105,6 +111,8 @@ async function start(opts) {
     source,
     '--db-file',
     dbFile,
+    '--registry-db-file',
+    registryDbFile,
   ], {
     cwd: process.cwd(),
     detached: true,
