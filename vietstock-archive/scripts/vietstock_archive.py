@@ -39,8 +39,11 @@ HTML_DIR = ROOT / "html"
 TEXT_DIR = ROOT / "text"
 LOG_DIR = ROOT / "logs"
 
-# RSS relay
-RELAY_INDEX = "http://127.0.0.1:18999/index.txt"
+# RSS relay (file-based preferred)
+RELAY_HTTP_INDEX = "http://127.0.0.1:18999/index.txt"
+RELAY_ROOT = Path("/Users/lenamkhanh/.clawdbot/vietstock-relay")
+RELAY_INDEX_PATH = RELAY_ROOT / "index.txt"
+RELAY_FEEDS_DIR = RELAY_ROOT / "feeds"
 
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -88,6 +91,33 @@ def http_get(url: str, timeout: int = 30) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
+
+
+def load_relay_index_text() -> str:
+    """Load relay index.txt.
+
+    Prefer file-based relay at ~/.clawdbot/vietstock-relay/index.txt.
+    Fall back to the legacy local HTTP relay if the file isn't present.
+    """
+    try:
+        if RELAY_INDEX_PATH.exists():
+            return RELAY_INDEX_PATH.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        pass
+
+    # Legacy fallback (requires a local http server).
+    return http_get(RELAY_HTTP_INDEX).decode("utf-8", errors="ignore")
+
+
+def relay_feed_path_from_index_line(right: str) -> Optional[Path]:
+    """Convert '/feeds/<file>.xml' mapping into a local file path."""
+    right = (right or "").strip()
+    if not right.startswith("/feeds/"):
+        return None
+    fname = right[len("/feeds/") :]
+    # basic path hardening
+    fname = fname.replace("..", "").lstrip("/")
+    return RELAY_FEEDS_DIR / fname
 
 
 def http_get_playwright(url: str, timeout_ms: int = 45000) -> bytes:
@@ -333,8 +363,8 @@ def cmd_init(args: argparse.Namespace) -> int:
     conn = connect()
     apply_schema(conn, schema_sql)
 
-    # load RSS feed list from relay index
-    idx = http_get(RELAY_INDEX).decode("utf-8", errors="ignore")
+    # load RSS feed list from relay index (file-based preferred)
+    idx = load_relay_index_text()
     feed_urls = rss_list_from_index(idx)
 
     for f_url in feed_urls:
@@ -401,16 +431,19 @@ def cmd_rss(args: argparse.Namespace) -> int:
         "SELECT feed_url, last_seen_published_at FROM feeds"
     ).fetchall()
 
-    # read directly from local relay cached files (faster than refetching public)
-    # Use the relay index mapping to locate /feeds/*.xml
-    idx = http_get(RELAY_INDEX).decode("utf-8", errors="ignore")
-    mapping: dict[str, str] = {}
+    # Read directly from local relay cached files.
+    # Use the relay index mapping to locate /feeds/*.xml.
+    idx = load_relay_index_text()
+    mapping: dict[str, Path] = {}
     for line in idx.splitlines():
         if "->" not in line:
             continue
         left, right = [x.strip() for x in line.split("->", 1)]
-        if left.startswith("http") and right.startswith("/feeds/"):
-            mapping[left] = "http://127.0.0.1:18999" + right
+        if not left.startswith("http"):
+            continue
+        p = relay_feed_path_from_index_line(right)
+        if p:
+            mapping[left] = p
 
     feeds_ok = 0
     feeds_err = 0
@@ -426,8 +459,8 @@ def cmd_rss(args: argparse.Namespace) -> int:
         f_url = row["feed_url"]
         last_seen = (row["last_seen_published_at"] or "").strip() or None
 
-        rss_url = mapping.get(f_url)
-        if not rss_url:
+        rss_path = mapping.get(f_url)
+        if not rss_path:
             continue
 
         st = {
@@ -444,10 +477,10 @@ def cmd_rss(args: argparse.Namespace) -> int:
         }
 
         try:
-            xml = http_get(rss_url, timeout=15)
+            xml = rss_path.read_bytes()
         except Exception as e:
             feeds_err += 1
-            st["error"] = (str(e) or "rss fetch error")[:120]
+            st["error"] = (f"rss read error: {e}" if str(e) else "rss read error")[:120]
             conn.execute(
                 "UPDATE feeds SET last_checked_at=? WHERE feed_url=?",
                 (now_iso(), f_url),

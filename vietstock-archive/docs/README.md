@@ -9,7 +9,7 @@ This folder documents and implements a local-first pipeline to:
 5. Store everything locally for later Q&A, sentiment, and embeddings
 
 ## Status
-- RSS relay: **enabled** (served locally at `http://127.0.0.1:18999/`, refreshed every 15m)
+- RSS relay: **enabled** (file-based at `~/.clawdbot/vietstock-relay/`, refreshed every 15m; HTTP server is optional)
 - Archive DB + crawler: **in progress** (this folder)
 
 ## Components
