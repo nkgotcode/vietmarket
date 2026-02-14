@@ -33,3 +33,6 @@ BOOTSTRAP.md
 !/scripts/simplize_expand_market.mjs
 !/scripts/simplize_build_registry.mjs
 !/scripts/vietstock_registry_backfill.mjs
+
+# local vietstock archive db (generated)
+vietstock-archive/archive.sqlite
