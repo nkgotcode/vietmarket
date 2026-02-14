@@ -26,6 +26,14 @@
   - Schedule: minute 05, every hour (Asia/Ho_Chi_Minh)
   - State file: `/Users/lenamkhanh/clawd/memory/auto-distill-state.json`
 
+- Simplize ingest + daemon jobs:
+  - Simplize ingest (Q) every 30m
+    - Job id: 3572b52a-5026-4e6e-923a-d0d061079f4e
+  - Simplize API daemon keepalive (every 5m)
+    - Job id: c0894d11-d10e-45b0-979d-8175529d41f2
+  - Simplize API watchdog (every 2m)
+    - Job id: 57be7e74-cf29-4dd4-be01-4d18c474bf76
+
 - Vietstock RSS relay refresh cron job:
   - Job name: Vietstock RSS relay refresh (15m)
   - Job id: fc2e2adc-fe91-4547-b09a-0b7235eb3914
