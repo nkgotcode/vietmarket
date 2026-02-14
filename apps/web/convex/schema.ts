@@ -1,0 +1,69 @@
+import { defineSchema, defineTable } from 'convex/server';
+import { v } from 'convex/values';
+
+// Canonical VietMarket schema (Convex).
+// Start with candles + minimal symbol/news primitives; expand incrementally.
+
+export default defineSchema({
+  candles: defineTable({
+    ticker: v.string(),
+    tf: v.union(v.literal('1d'), v.literal('1h'), v.literal('15m')),
+    ts: v.number(), // unix ms
+    o: v.number(),
+    h: v.number(),
+    l: v.number(),
+    c: v.number(),
+    v: v.optional(v.number()),
+    // provenance
+    source: v.optional(v.string()),
+    ingestedAt: v.optional(v.number()),
+  })
+    .index('by_ticker_tf_ts', ['ticker', 'tf', 'ts'])
+    .index('by_ticker_tf', ['ticker', 'tf']),
+
+  symbols: defineTable({
+    ticker: v.string(),
+    name: v.optional(v.string()),
+    exchange: v.optional(v.string()),
+    active: v.optional(v.boolean()),
+    updatedAt: v.optional(v.number()),
+  }).index('by_ticker', ['ticker']),
+
+  articles: defineTable({
+    url: v.string(),
+    source: v.string(),
+    title: v.string(),
+    publishedAt: v.optional(v.string()),
+    wordCount: v.optional(v.number()),
+    lang: v.optional(v.string()),
+
+    // text handling
+    textPreview: v.optional(v.string()),
+    textFileId: v.optional(v.id('_storage')),
+    textSha256: v.optional(v.string()),
+
+    ingestedAt: v.optional(v.number()),
+  }).index('by_url', ['url']),
+
+  articleSymbols: defineTable({
+    articleUrl: v.string(),
+    ticker: v.string(),
+    confidence: v.optional(v.number()),
+    method: v.optional(v.string()),
+  })
+    .index('by_ticker', ['ticker'])
+    .index('by_article', ['articleUrl']),
+
+  fiLatest: defineTable({
+    ticker: v.string(),
+    period: v.string(),
+    statement: v.string(),
+    periodDate: v.optional(v.string()),
+    metric: v.string(),
+    value: v.optional(v.number()),
+    fetchedAt: v.optional(v.string()),
+    ingestedAt: v.optional(v.number()),
+  })
+    .index('by_ticker', ['ticker'])
+    .index('by_ticker_metric', ['ticker', 'metric']),
+});

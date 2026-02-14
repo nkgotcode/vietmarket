@@ -6,7 +6,7 @@ import { init, dispose, type KLineData } from 'klinecharts';
 function makeLoader(data: KLineData[]) {
   let done = false;
   return {
-    getBars: ({ type, callback }: { type: string; callback: (d: KLineData[], more?: any) => void }) => {
+    getBars: ({ type, callback }: { type: string; callback: (d: KLineData[], more?: boolean) => void }) => {
       if (type === 'init' && !done) {
         done = true;
         callback(data, true);
@@ -29,8 +29,10 @@ export default function ChartDemoPage() {
   const elRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!elRef.current) return;
-    const chart = init(elRef.current);
+    const el = elRef.current;
+    if (!el) return;
+
+    const chart = init(el);
     if (!chart) return;
 
     // KLineCharts v10 uses a dataLoader pattern.
@@ -40,7 +42,7 @@ export default function ChartDemoPage() {
     window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('resize', onResize);
-      dispose(elRef.current!);
+      dispose(el);
     };
   }, []);
 

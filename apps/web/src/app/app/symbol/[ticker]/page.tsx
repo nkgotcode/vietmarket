@@ -1,23 +1,22 @@
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
 
-export default function AppHome() {
+export default async function SymbolPage({ params }: { params: Promise<{ ticker: string }> }) {
+  const { ticker } = await params;
   return (
     <main style={{ maxWidth: 1100, margin: '24px auto', padding: 24, fontFamily: 'system-ui' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <h1 style={{ margin: 0 }}>VietMarket</h1>
+        <div>
+          <Link href="/app">← Back</Link>
+          <h1 style={{ margin: '8px 0 0' }}>{ticker.toUpperCase()}</h1>
+          <div style={{ color: '#666' }}>Charts + context will be wired from Convex next.</div>
+        </div>
         <UserButton />
       </div>
-      <p style={{ color: '#666' }}>
-        First version will include charts (KLineChart) + Vietstock news + ticker context.
-      </p>
 
-      <ul>
+      <ul style={{ marginTop: 16 }}>
         <li>
           <Link href="/app/chart-demo">Chart demo</Link>
-        </li>
-        <li>
-          <Link href="/app/symbol/VCB">Symbol page (stub)</Link>
         </li>
       </ul>
     </main>
