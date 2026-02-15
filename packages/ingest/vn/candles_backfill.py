@@ -130,12 +130,29 @@ def chunked(xs: list, n: int):
         yield xs[i : i + n]
 
 
-def fetch_candles_vci(symbol: str, interval: str, start: str, end: str | None):
+def fetch_candles_vci(symbol: str, interval: str, start: str, end: str | None, *, max_retries: int = 6):
+    """Fetch candles from VCI via vnstock, with basic rate-limit backoff."""
     q = Vnstock().stock(symbol=symbol, source='VCI').quote
-    # vnstock requires start or length; we always pass start.
-    df = q.history(symbol=symbol, start=start, end=end, interval=interval)
-    # columns: time, open, high, low, close, volume
-    return df
+
+    last_err = None
+    for attempt in range(max_retries + 1):
+        try:
+            # vnstock requires start or length; we always pass start.
+            df = q.history(symbol=symbol, start=start, end=end, interval=interval)
+            return df
+        except Exception as e:
+            last_err = e
+            msg = str(e)
+            # vnstock/VCI occasionally returns a Vietnamese rate limit message.
+            is_rl = ('Rate Limit' in msg) or ('GIỚI HẠN API' in msg) or ('20 requests' in msg)
+            if is_rl and attempt < max_retries:
+                # Backoff ~15s, 30s, 45s...
+                sleep_s = 15 * (attempt + 1)
+                time.sleep(sleep_s)
+                continue
+            raise
+
+    raise last_err  # pragma: no cover
 
 
 def suppress_vnstock_info_logs() -> None:
