@@ -34,6 +34,7 @@ BOOTSTRAP.md
 !/scripts/simplize_build_registry.mjs
 !/scripts/vietstock_registry_backfill.mjs
 !/scripts/vietmarket_candles_backfill.py
+!/scripts/vietmarket_candles_batch_run.sh
 
 # local vietstock archive db (generated)
 vietstock-archive/archive.sqlite

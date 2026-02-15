@@ -138,8 +138,28 @@ def fetch_candles_vci(symbol: str, interval: str, start: str, end: str | None):
     return df
 
 
+def suppress_vnstock_info_logs() -> None:
+    """vnstock logs a lot of INFO lines; suppress to keep cron output readable."""
+    import logging
+
+    # Root/basic config can still emit; reduce overall noise too.
+    logging.getLogger().setLevel(logging.WARNING)
+
+    for name in [
+        'vnstock',
+        'vnstock.common.data',
+        'vnai',
+        'vnai.beam.quota',
+    ]:
+        try:
+            logging.getLogger(name).setLevel(logging.ERROR)
+        except Exception:
+            pass
+
+
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
+    suppress_vnstock_info_logs()
     tfs = [t.strip().lower() for t in args.tfs.split(',') if t.strip()]
     tickers = load_tickers(args)
 
