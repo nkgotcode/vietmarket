@@ -24,7 +24,10 @@
   - Job name: Hourly memory distill → MEMORY.md + daily log
   - Job id: b1c6d976-66d2-44be-a32c-f0dd85610e6c
   - Schedule: minute 05, every hour (Asia/Ho_Chi_Minh)
-  - State file: `/Users/lenamkhanh/clawd/memory/auto-distill-state.json`
+  - State file: `/Users/lenamkhanh/vietmarket/memory/auto-distill-state.json`
+  - Change detection: compare `lastSessionMtimeMs` against newest mtime across `~/.openclaw/agents/main/sessions/sessions.json` and newest `*.jsonl` under `~/.openclaw/agents/main/sessions/`.
+  - Output behavior: if no session changes or no durable items found, output **exactly** `NO_REPLY` and do not write logs.
+  - Writes (only when durable items exist): append to `/Users/lenamkhanh/vietmarket/memory/YYYY-MM-DD.md` and update `/Users/lenamkhanh/vietmarket/MEMORY.md` (deduped).
 
 - Simplize ingest + daemon jobs:
   - Simplize ingest (Q) every 30m
@@ -51,12 +54,11 @@
   - Note: if `kv.backfill.done`/`control.backfill_done` is set, the backfill step is skipped.
 
 ## News tracking (local-first)
-- Vietstock RSS relay/cache served locally at http://127.0.0.1:18999/ (needed because Vietstock blocks blogwatcher/Go default user-agent).
-- Start the relay server via launchd (LaunchAgent: ~/Library/LaunchAgents/com.clawdbot.vietstock-relay.plist).
-- If Vietstock archive RSS ingest shows `Connection refused` / `URLError: [Errno 61]` when fetching the relay index at `http://127.0.0.1:18999/`, the relay server is likely not running/not listening (distinct from `vietstock-relay-refresh`, which only refreshes cache).
+- Vietstock RSS relay/cache is **file-based** at `~/.clawdbot/vietstock-relay/` and refreshed every 15m (`vietstock-relay-refresh`).
+- Vietstock archive RSS ingest reads from `~/.clawdbot/vietstock-relay/index.txt` (falls back to legacy HTTP relay if present).
 - `vietstock-archive status --json` does **not** accept a positional path argument (e.g. `.`); run it from the intended working directory.
-- Day exports (for sharing/reading outside chat) are stored under: `/Users/lenamkhanh/clawd/exports/vietstock/YYYY-MM-DD/` (typically `*-full.md` + `index.json`, optionally zipped).
-- Plan: local-only archive first (HTML + cleaned text + SQLite), add syncing + dashboard later via Clawdbot Gateway.
+- Day exports (for sharing/reading outside chat) are stored under: `/Users/lenamkhanh/vietmarket/exports/vietstock/YYYY-MM-DD/` (typically `*-full.md` + `index.json`, optionally zipped).
+- Plan: local-only archive first (HTML + cleaned text + SQLite), add syncing + dashboard later via VietMarket (Convex + web).
 
 ## Simplize market data (reverse-engineering)
 - OHLCV endpoint works (public): `https://api2.simplize.vn/api/historical/prices/ohlcv` (params include `ticker`, `type`, `interval`, `size`, `to`).
