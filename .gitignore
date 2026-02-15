@@ -37,3 +37,8 @@ BOOTSTRAP.md
 
 # local vietstock archive db (generated)
 vietstock-archive/archive.sqlite
+
+# Convex generated (local)
+apps/web/convex/_generated/
+apps/web/convex/README.md
+apps/web/convex/tsconfig.json
