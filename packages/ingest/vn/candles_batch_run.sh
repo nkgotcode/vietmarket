@@ -58,7 +58,7 @@ start_15m = os.environ.get('START_15M', '2000-01-01')
 def run(tf: str, start_date: str):
     cmd = [
         'python3',
-        str(root/'scripts/vietmarket_candles_backfill.py'),
+        str(root/'packages/ingest/vn/candles_backfill.py'),
         '--tickers', ','.join(sel),
         '--tfs', tf,
         '--start', start_date,
