@@ -26,6 +26,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument('--tfs', default='1d,1h,15m')
     p.add_argument('--bars', type=int, default=500)
     p.add_argument('--sleep', type=float, default=0.05)
+    p.add_argument('--time-budget-sec', type=int, default=240, help='Hard stop so cron never hangs')
+    p.add_argument('--query-timeout-sec', type=int, default=20)
     return p.parse_args(argv)
 
 
@@ -36,9 +38,9 @@ def convex_url() -> str:
     return u.rstrip('/')
 
 
-def convex_query(path: str, args: dict) -> dict:
+def convex_query(path: str, args: dict, *, timeout_s: int = 20) -> dict:
     url = convex_url() + '/api/query'
-    r = requests.post(url, json={'path': path, 'args': args}, timeout=60)
+    r = requests.post(url, json={'path': path, 'args': args}, timeout=timeout_s)
     r.raise_for_status()
     return r.json()
 
@@ -77,13 +79,27 @@ def main(argv: list[str]) -> int:
     tfs = [x.strip() for x in args.tfs.split(',') if x.strip()]
     tickers = load_tickers(args.universe, args.limit_tickers)
 
+    started = time.time()
+    deadline = started + max(10, args.time_budget_sec)
+
     enq = 0
     checked = 0
+    errors = 0
 
     for ticker in tickers:
         for tf in tfs:
+            if time.time() > deadline:
+                print(json.dumps({'ok': True, 'checked': checked, 'enqueued': enq, 'errors': errors, 'stopped': 'time_budget'}))
+                return 0
+
             checked += 1
-            out = convex_query('candles:latest', {'ticker': ticker, 'tf': tf, 'limit': args.bars})
+            try:
+                out = convex_query('candles:latest', {'ticker': ticker, 'tf': tf, 'limit': args.bars}, timeout_s=args.query_timeout_sec)
+            except Exception as e:
+                errors += 1
+                # continue best-effort
+                continue
+
             data = out.get('value') if isinstance(out, dict) and 'value' in out else out
             if not data or len(data) < 5:
                 continue
