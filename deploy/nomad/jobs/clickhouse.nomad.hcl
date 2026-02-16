@@ -26,7 +26,6 @@ job "clickhouse" {
       config {
         image = "clickhouse/clickhouse-server:24.12"
         network_mode = "host"
-        user = "0:0"
 
         volumes = [
           "/opt/clickhouse:/var/lib/clickhouse",
