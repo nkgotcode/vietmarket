@@ -1,0 +1,9 @@
+{
+  "name": "vietmarket-history-api",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

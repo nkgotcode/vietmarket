@@ -1,0 +1,11 @@
+services:
+  history-api:
+    image: ghcr.io/nkgotcode/vietmarket-history-api:main
+    restart: unless-stopped
+    environment:
+      PORT: "8787"
+      API_KEY: "${API_KEY}"
+      CLICKHOUSE_URL: "http://100.103.201.10:8123"
+      CLICKHOUSE_DB: "vietmarket"
+    ports:
+      - "127.0.0.1:8787:8787"
