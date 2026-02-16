@@ -122,7 +122,7 @@ job "vietmarket-candles" {
   }
 
   group "primary_backfill_1h" {
-    count = 12
+    count = 4
 
     constraint {
       attribute = "${node.unique.name}"
@@ -170,7 +170,7 @@ job "vietmarket-candles" {
   }
 
   group "primary_backfill_15m" {
-    count = 12
+    count = 3
 
     constraint {
       attribute = "${node.unique.name}"
@@ -320,7 +320,7 @@ job "vietmarket-candles" {
   }
 
   group "standby_backfill_1h" {
-    count = 12
+    count = 4
 
     constraint {
       attribute = "${node.unique.name}"
@@ -368,7 +368,7 @@ job "vietmarket-candles" {
   }
 
   group "standby_backfill_15m" {
-    count = 12
+    count = 3
 
     constraint {
       attribute = "${node.unique.name}"
