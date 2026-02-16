@@ -32,11 +32,10 @@ job "clickhouse" {
           "/opt/clickhouse-logs:/var/log/clickhouse-server",
         ]
 
-        # Bind to tailscale IP only.
+        # Listen on host; restrict access at network level (Tailscale + firewall).
         args = [
           "--http_port=8123",
-          "--tcp_port=9000",
-          "--listen_host=100.103.201.10",
+          "--tcp_port=9000"
         ]
       }
 
