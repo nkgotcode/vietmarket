@@ -30,7 +30,7 @@ job "vietmarket-candles" {
       driver = "docker"
 
       config {
-        image = "ghcr.io/REPLACE_ME/vietmarket-ingest:REPLACE_TAG"
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
         command = "vietmarket-ingest"
         args = ["candles", "latest"]
       }
@@ -54,7 +54,7 @@ job "vietmarket-candles" {
     task "candles_backfill_1d" {
       driver = "docker"
       config {
-        image = "ghcr.io/REPLACE_ME/vietmarket-ingest:REPLACE_TAG"
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
         command = "vietmarket-ingest"
         args = ["candles", "backfill", "--tf", "1d", "--start", "2000-01-01"]
       }
@@ -73,7 +73,7 @@ job "vietmarket-candles" {
     task "candles_backfill_1h" {
       driver = "docker"
       config {
-        image = "ghcr.io/REPLACE_ME/vietmarket-ingest:REPLACE_TAG"
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
         command = "vietmarket-ingest"
         args = ["candles", "backfill", "--tf", "1h", "--start", "2000-01-01"]
       }
@@ -92,7 +92,7 @@ job "vietmarket-candles" {
     task "candles_backfill_15m" {
       driver = "docker"
       config {
-        image = "ghcr.io/REPLACE_ME/vietmarket-ingest:REPLACE_TAG"
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
         command = "vietmarket-ingest"
         args = ["candles", "backfill", "--tf", "15m", "--start", "2000-01-01"]
       }
@@ -123,7 +123,7 @@ job "vietmarket-candles" {
     task "candles_bundle" {
       driver = "docker"
       config {
-        image = "ghcr.io/REPLACE_ME/vietmarket-ingest:REPLACE_TAG"
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
         command = "vietmarket-ingest"
         args = ["bundle", "candles"]
       }
