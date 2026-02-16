@@ -4,7 +4,7 @@ job "vietmarket-candles-backfill" {
 
   # Every 15 minutes.
   periodic {
-    cron             = "*/15 * * * *"
+    crons = ["*/15 * * * *"]
     prohibit_overlap = true
     time_zone        = "Asia/Ho_Chi_Minh"
   }
@@ -16,11 +16,18 @@ job "vietmarket-candles-backfill" {
 
   group "primary_backfill_1d" {
     count = 12
-    constraint { attribute = "${node.unique.name}" value = "optiplex" }
+    constraint {
+      attribute = "${node.unique.name}"
+      value     = "optiplex"
+    }
 
     task "backfill_1d" {
       driver = "docker"
-      config { image = "ghcr.io/nkgotcode/vietmarket-ingest:main" command = "bash" args = ["-lc", "packages/ingest/vn/candles_batch_run.sh"] }
+      config {
+        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        command = "bash"
+        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+      }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
         NODE_ID       = "optiplex"
@@ -34,17 +41,27 @@ job "vietmarket-candles-backfill" {
         START_1D      = "2000-01-01"
         CURSOR_DIR    = "/opt/nomad/data/vietmarket-cursors"
       }
-      resources { cpu = 250 memory = 256 }
+      resources {
+        cpu    = 250
+        memory = 256
+      }
     }
   }
 
   group "primary_backfill_1h" {
     count = 4
-    constraint { attribute = "${node.unique.name}" value = "optiplex" }
+    constraint {
+      attribute = "${node.unique.name}"
+      value     = "optiplex"
+    }
 
     task "backfill_1h" {
       driver = "docker"
-      config { image = "ghcr.io/nkgotcode/vietmarket-ingest:main" command = "bash" args = ["-lc", "packages/ingest/vn/candles_batch_run.sh"] }
+      config {
+        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        command = "bash"
+        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+      }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
         NODE_ID       = "optiplex"
@@ -60,17 +77,27 @@ job "vietmarket-candles-backfill" {
         START_1H      = "2000-01-01"
         CURSOR_DIR    = "/opt/nomad/data/vietmarket-cursors"
       }
-      resources { cpu = 250 memory = 256 }
+      resources {
+        cpu    = 250
+        memory = 256
+      }
     }
   }
 
   group "primary_backfill_15m" {
     count = 3
-    constraint { attribute = "${node.unique.name}" value = "optiplex" }
+    constraint {
+      attribute = "${node.unique.name}"
+      value     = "optiplex"
+    }
 
     task "backfill_15m" {
       driver = "docker"
-      config { image = "ghcr.io/nkgotcode/vietmarket-ingest:main" command = "bash" args = ["-lc", "packages/ingest/vn/candles_batch_run.sh"] }
+      config {
+        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        command = "bash"
+        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+      }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
         NODE_ID       = "optiplex"
@@ -86,16 +113,26 @@ job "vietmarket-candles-backfill" {
         START_15M     = "2000-01-01"
         CURSOR_DIR    = "/opt/nomad/data/vietmarket-cursors"
       }
-      resources { cpu = 250 memory = 256 }
+      resources {
+        cpu    = 250
+        memory = 256
+      }
     }
   }
 
   group "standby_backfill_1d" {
     count = 12
-    constraint { attribute = "${node.unique.name}" value = "epyc" }
+    constraint {
+      attribute = "${node.unique.name}"
+      value     = "epyc"
+    }
     task "backfill_1d" {
       driver = "docker"
-      config { image = "ghcr.io/nkgotcode/vietmarket-ingest:main" command = "bash" args = ["-lc", "packages/ingest/vn/candles_batch_run.sh"] }
+      config {
+        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        command = "bash"
+        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+      }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
         NODE_ID       = "epyc"
@@ -109,16 +146,26 @@ job "vietmarket-candles-backfill" {
         START_1D      = "2000-01-01"
         CURSOR_DIR    = "/opt/nomad/data/vietmarket-cursors"
       }
-      resources { cpu = 250 memory = 256 }
+      resources {
+        cpu    = 250
+        memory = 256
+      }
     }
   }
 
   group "standby_backfill_1h" {
     count = 4
-    constraint { attribute = "${node.unique.name}" value = "epyc" }
+    constraint {
+      attribute = "${node.unique.name}"
+      value     = "epyc"
+    }
     task "backfill_1h" {
       driver = "docker"
-      config { image = "ghcr.io/nkgotcode/vietmarket-ingest:main" command = "bash" args = ["-lc", "packages/ingest/vn/candles_batch_run.sh"] }
+      config {
+        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        command = "bash"
+        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+      }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
         NODE_ID       = "epyc"
@@ -134,16 +181,26 @@ job "vietmarket-candles-backfill" {
         START_1H      = "2000-01-01"
         CURSOR_DIR    = "/opt/nomad/data/vietmarket-cursors"
       }
-      resources { cpu = 250 memory = 256 }
+      resources {
+        cpu    = 250
+        memory = 256
+      }
     }
   }
 
   group "standby_backfill_15m" {
     count = 3
-    constraint { attribute = "${node.unique.name}" value = "epyc" }
+    constraint {
+      attribute = "${node.unique.name}"
+      value     = "epyc"
+    }
     task "backfill_15m" {
       driver = "docker"
-      config { image = "ghcr.io/nkgotcode/vietmarket-ingest:main" command = "bash" args = ["-lc", "packages/ingest/vn/candles_batch_run.sh"] }
+      config {
+        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        command = "bash"
+        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+      }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
         NODE_ID       = "epyc"
@@ -159,7 +216,10 @@ job "vietmarket-candles-backfill" {
         START_15M     = "2000-01-01"
         CURSOR_DIR    = "/opt/nomad/data/vietmarket-cursors"
       }
-      resources { cpu = 250 memory = 256 }
+      resources {
+        cpu    = 250
+        memory = 256
+      }
     }
   }
 }

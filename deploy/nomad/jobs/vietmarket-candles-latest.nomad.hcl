@@ -4,7 +4,7 @@ job "vietmarket-candles-latest" {
 
   # Every 5 minutes.
   periodic {
-    cron             = "*/5 * * * *"
+    crons = ["*/5 * * * *"]
     prohibit_overlap = true
     time_zone        = "Asia/Ho_Chi_Minh"
   }
