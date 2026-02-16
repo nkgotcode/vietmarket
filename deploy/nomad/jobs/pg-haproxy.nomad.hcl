@@ -53,16 +53,12 @@ backend patroni_rw
   mode tcp
   option tcp-check
 
-  # Check Patroni REST API for leader role.
-  # Patroni returns JSON including "role":"leader".
-  option httpchk GET /health
-  http-check expect status 200
-
-  # Use http-check via a separate health port.
+  # Pure TCP checks on Postgres port.
+  # (Avoid depending on Patroni REST API reachability on 8008.)
   default-server inter 2s fall 3 rise 2 on-marked-down shutdown-sessions
 
-  server optiplex 100.83.150.39:5432 check port 8008
-  server epyc     100.103.201.10:5432 check port 8008
+  server optiplex 100.83.150.39:5432 check
+  server epyc     100.103.201.10:5432 check
 CFG
       }
 
