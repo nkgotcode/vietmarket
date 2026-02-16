@@ -1,0 +1,96 @@
+import { mutation, query } from './_generated/server';
+import { v } from 'convex/values';
+
+function sha256Hex(input: Uint8Array): Promise<string> {
+  return crypto.subtle.digest('SHA-256', input).then((buf) => {
+    const bytes = new Uint8Array(buf);
+    return Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  });
+}
+
+export const upsertWithText = mutation({
+  args: {
+    url: v.string(),
+    source: v.string(),
+    title: v.string(),
+    publishedAt: v.optional(v.string()),
+    lang: v.optional(v.string()),
+    wordCount: v.optional(v.number()),
+    text: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const enc = new TextEncoder();
+    const bytes = enc.encode(args.text);
+    const textSha256 = await sha256Hex(bytes);
+
+    const preview = args.text.slice(0, 5000);
+
+    const existing = await ctx.db
+      .query('articles')
+      .withIndex('by_url', (q) => q.eq('url', args.url))
+      .unique();
+
+    // If text is unchanged, just ensure metadata exists.
+    if (existing && existing.textSha256 === textSha256) {
+      await ctx.db.patch(existing._id, {
+        source: args.source,
+        title: args.title,
+        publishedAt: args.publishedAt,
+        lang: args.lang,
+        wordCount: args.wordCount,
+        textPreview: preview,
+        ingestedAt: now,
+      });
+      return { ok: true, updated: true, stored: false, url: args.url };
+    }
+
+    // Store as a file in Convex storage.
+    const blob = new Blob([bytes], { type: 'text/plain; charset=utf-8' });
+    const fileId = await ctx.storage.store(blob);
+
+    if (!existing) {
+      await ctx.db.insert('articles', {
+        url: args.url,
+        source: args.source,
+        title: args.title,
+        publishedAt: args.publishedAt,
+        lang: args.lang,
+        wordCount: args.wordCount,
+        textPreview: preview,
+        textFileId: fileId,
+        textSha256,
+        ingestedAt: now,
+      });
+      return { ok: true, inserted: true, stored: true, url: args.url };
+    }
+
+    await ctx.db.patch(existing._id, {
+      source: args.source,
+      title: args.title,
+      publishedAt: args.publishedAt,
+      lang: args.lang,
+      wordCount: args.wordCount,
+      textPreview: preview,
+      textFileId: fileId,
+      textSha256,
+      ingestedAt: now,
+    });
+
+    return { ok: true, updated: true, stored: true, url: args.url };
+  },
+});
+
+export const getTextUrl = query({
+  args: { url: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query('articles')
+      .withIndex('by_url', (q) => q.eq('url', args.url))
+      .unique();
+    if (!row?.textFileId) return null;
+    return await ctx.storage.getUrl(row.textFileId);
+  },
+});
