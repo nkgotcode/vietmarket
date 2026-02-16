@@ -17,6 +17,10 @@ function parseArgs(argv) {
     tokenFile: null,
     universeFile: null,
     dryRun: false,
+
+    // Safety: never hang forever in schedulers.
+    timeBudgetSec: Number(process.env.TIME_BUDGET_SEC || 0) || 15 * 60,
+    heartbeatSec: Number(process.env.HEARTBEAT_SEC || 0) || 30,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -32,8 +36,10 @@ function parseArgs(argv) {
     else if (a === '--token-file') { out.tokenFile = String(v || '').trim() || null; i++; }
     else if (a === '--universe-file') { out.universeFile = String(v || '').trim() || null; i++; }
     else if (a === '--dry-run') { out.dryRun = true; }
+    else if (a === '--time-budget-sec') { out.timeBudgetSec = Number(v || out.timeBudgetSec); i++; }
+    else if (a === '--heartbeat-sec') { out.heartbeatSec = Number(v || out.heartbeatSec); i++; }
     else if (a === '--help' || a === '-h') {
-      console.log('Usage: node scripts/simplize_expand_market.mjs --period Q --chunk-size 100 --max-chunks 3 --out-dir data/simplize [--token-file <path>] [--universe-file <path>] [--dry-run]');
+      console.log('Usage: node scripts/simplize_expand_market.mjs --period Q --chunk-size 100 --max-chunks 3 --out-dir data/simplize [--token-file <path>] [--universe-file <path>] [--time-budget-sec 900] [--heartbeat-sec 30] [--dry-run]');
       process.exit(0);
     }
   }
@@ -102,8 +108,25 @@ async function loadUniverse(args) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+
+  const startedWall = Date.now();
+  const killTimer = setTimeout(() => {
+    console.error(`TIMEOUT: simplize_expand_market exceeded time budget (${args.timeBudgetSec}s)`);
+    process.exit(124);
+  }, Math.max(10, args.timeBudgetSec) * 1000);
+  killTimer.unref?.();
+
+  const hb = setInterval(() => {
+    const elapsed = Math.round((Date.now() - startedWall) / 1000);
+    console.log(JSON.stringify({ ok: true, heartbeat: true, elapsedSec: elapsed, stage: globalThis.__STAGE__ || 'unknown' }));
+  }, Math.max(5, args.heartbeatSec) * 1000);
+  hb.unref?.();
+
+  globalThis.__STAGE__ = 'loadToken';
   const token = await loadToken(args);
 
+  globalThis.__STAGE__ = 'loadUniverse';
+  console.log(JSON.stringify({ ok: true, stage: 'loadUniverse' }));
   const uni = await loadUniverse(args);
   if (!uni.ok || !uni.count) throw new Error('failed to build universe from all sources');
 
@@ -144,17 +167,23 @@ async function main() {
   const startedAt = Date.now();
   const results = [];
   for (const chunkIdx of selected) {
+    globalThis.__STAGE__ = `ingest chunk ${chunkIdx}`;
     const tickers = allChunks[chunkIdx];
+    console.log(JSON.stringify({ ok: true, stage: 'ingest', chunk: chunkIdx, tickers: tickers.length, sample: tickers.slice(0, 5) }));
     const res = runIngest({ tickers, period: args.period, size: args.size, outDir: args.outDir, token });
     results.push({ chunk: chunkIdx, tickers: tickers.length, resultCount: res?.results?.length || 0 });
   }
 
   // rebuild publish json + sqlite after chunked run
+  globalThis.__STAGE__ = 'publish';
+  console.log(JSON.stringify({ ok: true, stage: 'publish' }));
   const pub = spawnSync(process.execPath, ['scripts/simplize_publish.mjs', '--in-dir', args.outDir, '--out-file', `${args.outDir}/publish/latest.json`], {
     cwd: process.cwd(), encoding: 'utf8', timeout: 120000,
   });
   if (pub.status !== 0) throw new Error(`publish failed: ${pub.stderr || pub.stdout}`);
 
+  globalThis.__STAGE__ = 'sqlite_sync';
+  console.log(JSON.stringify({ ok: true, stage: 'sqlite_sync' }));
   const db = spawnSync(process.execPath, ['scripts/simplize_sqlite_sync.mjs', '--raw-dir', `${args.outDir}/raw`, '--db-file', `${args.outDir}/simplize.db`], {
     cwd: process.cwd(), encoding: 'utf8', timeout: 120000,
   });
