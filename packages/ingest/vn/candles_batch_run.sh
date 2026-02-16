@@ -15,7 +15,7 @@ export CONVEX_URL
 # Provide a stable root path for embedded python.
 export VIETMARKET_ROOT="$ROOT"
 
-UNIVERSE_FILE="$ROOT/data/simplize/universe.latest.json"
+UNIVERSE_FILE="${UNIVERSE_FILE:-$ROOT/data/simplize/universe.latest.json}"
 CURSOR_FILE="${CURSOR_FILE:-$ROOT/tmp/vietmarket_candles_cursor.json}"
 BATCH_SIZE="${BATCH_SIZE:-20}"
 TFS="${TFS:-1d,1h,15m}"

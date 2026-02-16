@@ -20,11 +20,11 @@ RUN pip install --no-cache-dir \
 
 # Copy only what we need for ingest.
 COPY packages/ingest ./packages/ingest
-COPY data/simplize/universe.latest.json ./data/simplize/universe.latest.json
 
 # Default env
-ENV VIETMARKET_ROOT=/app \
-    UNIVERSE_FILE=/app/data/simplize/universe.latest.json
+# NOTE: universe.latest.json is intentionally not baked into the image (it's local data / ignored by git).
+# Provide UNIVERSE_FILE via volume mount at runtime if needed.
+ENV VIETMARKET_ROOT=/app
 
 ENTRYPOINT ["bash","-lc"]
 CMD ["packages/ingest/vn/candles_batch_run.sh"]
