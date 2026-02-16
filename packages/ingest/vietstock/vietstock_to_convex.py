@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sync Vietstock archive (local SQLite + cleaned text files) into Convex.
 
-Reads ~/.clawdbot/vietstock-archive/archive.sqlite and for fetched articles
+Reads /Users/lenamkhanh/vietstock-archive-data/archive.sqlite (or VIETSTOCK_ARCHIVE_DB) and for fetched articles
 pushes metadata + full cleaned text into Convex File Storage via a mutation.
 
 Env:

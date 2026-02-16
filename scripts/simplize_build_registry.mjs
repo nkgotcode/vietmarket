@@ -19,7 +19,7 @@ function parseArgs(argv) {
     simplizeDb: 'data/simplize/simplize.db',
     simplizeUniverse: 'data/simplize/universe.latest.json',
     vietstockExportsDir: 'exports/vietstock',
-    vietstockDb: '/Users/lenamkhanh/.clawdbot/vietstock-archive/archive.sqlite',
+    vietstockDb: process.env.VIETSTOCK_ARCHIVE_DB || '/Users/lenamkhanh/vietstock-archive-data/archive.sqlite',
     vietstockDays: 30,
     registryDb: 'data/registry/market_registry.db',
   };

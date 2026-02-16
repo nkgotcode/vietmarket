@@ -20,7 +20,7 @@ async function safeReadText(p, maxChars = 120000) {
 function parseArgs(argv) {
   const out = {
     registryDb: 'data/registry/market_registry.db',
-    vietstockDb: '/Users/lenamkhanh/.clawdbot/vietstock-archive/archive.sqlite',
+    vietstockDb: process.env.VIETSTOCK_ARCHIVE_DB || '/Users/lenamkhanh/vietstock-archive-data/archive.sqlite',
     knownTickersFile: 'data/simplize/universe.latest.json',
     batchSize: 500,
     cursorKey: 'vietstock.backfill.published_at',

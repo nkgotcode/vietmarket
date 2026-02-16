@@ -64,9 +64,9 @@ vietstock-archive status --json
 ```
 
 ## Storage
-- SQLite DB: `~/.clawdbot/vietstock-archive/archive.sqlite`
-- HTML store: `~/.clawdbot/vietstock-archive/html/YYYY/MM/<sha256>.html`
-- Text store: `~/.clawdbot/vietstock-archive/text/YYYY/MM/<sha256>.txt`
+- SQLite DB: `/Users/lenamkhanh/vietstock-archive-data/archive.sqlite` (configurable via `VIETSTOCK_ARCHIVE_ROOT`)
+- HTML store: `/Users/lenamkhanh/vietstock-archive-data/html/YYYY/MM/<sha256>.html`
+- Text store: `/Users/lenamkhanh/vietstock-archive-data/text/YYYY/MM/<sha256>.txt`
 
 ## Progress definition
 - Oldest "seen" date is tracked as `MIN(articles.published_at)`.

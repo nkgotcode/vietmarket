@@ -13,11 +13,12 @@ This folder documents and implements a local-first pipeline to:
 - Archive DB + crawler: **in progress** (this folder)
 
 ## Components
-- Database: `~/.clawdbot/vietstock-archive/archive.sqlite`
+- Archive root: `/Users/lenamkhanh/vietstock-archive-data` (configurable via `VIETSTOCK_ARCHIVE_ROOT`)
+- Database: `/Users/lenamkhanh/vietstock-archive-data/archive.sqlite`
 - Content store:
-  - HTML: `~/.clawdbot/vietstock-archive/html/YYYY/MM/<sha256>.html`
-  - Text: `~/.clawdbot/vietstock-archive/text/YYYY/MM/<sha256>.txt`
-- Scripts (source): `clawd/vietstock-archive/scripts/`
+  - HTML: `/Users/lenamkhanh/vietstock-archive-data/html/YYYY/MM/<sha256>.html`
+  - Text: `/Users/lenamkhanh/vietstock-archive-data/text/YYYY/MM/<sha256>.txt`
+- Scripts (source): `vietstock-archive/scripts/`
 - Installed runner (symlink/copy): `~/.clawdbot/bin/vietstock-archive`
 
 ## Quickstart
