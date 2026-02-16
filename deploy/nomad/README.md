@@ -1,21 +1,44 @@
 # VietMarket Nomad Deploy
 
-## Topology (chosen)
-- Nomad servers (3): optiplex (linux), epyc (linux), vultr-vps (linux)
-- Nomad clients: optiplex, epyc, mac-mini (macOS)
+This folder documents Nomad usage for VietMarket ingestion + HA DB.
 
-## Notes
-- Mac mini should run client-only (no quorum risk).
-- Candles workers run on linux clients (docker driver).
-- News sync (Vietstock archive → Convex) runs on mac-mini via exec driver.
+## Topology
 
-## Env
-- CONVEX_URL: https://opulent-hummingbird-838.convex.cloud
-- SHARD_COUNT: 12
-- latest stale: 10m
-- deep stale: 30m
+### Nodes (tailnet IPs)
+- Optiplex (Linux): `100.83.150.39` — Nomad server+client
+- EPYC (Linux): `100.103.201.10` — Nomad server+client
+- Vultr VPS (Linux): `100.110.26.124` — Nomad server-only (quorum)
+- Mac mini (macOS): `100.100.5.40` — Nomad client-only (witness / utilities)
 
-## Files
-- `nomad/server.hcl` / `nomad/client.hcl`: node configs (templates)
-- `jobs/vietmarket-candles.nomad.hcl`: candles workers (12 shards)
-- `jobs/vietmarket-news.nomad.hcl`: vietstock news sync (mac-mini)
+## Jobs
+
+### Candles (periodic batch)
+- `jobs/vietmarket-candles-latest.nomad.hcl` — runs every 5m
+- `jobs/vietmarket-candles-backfill.nomad.hcl` — runs every 15m (currently 1D only)
+
+### News
+- `jobs/vietmarket-news.nomad.hcl` — Vietstock archive → Convex sync
+
+### History DB (Timescale HA)
+See: `HA_TIMESCALE_RUNBOOK.md`
+
+- `jobs/etcd.nomad.hcl` — etcd quorum for Patroni
+- `jobs/timescaledb-ha.nomad.hcl` — TimescaleDB HA (Patroni)
+- `jobs/pg-haproxy.nomad.hcl` — stable DB endpoint on port 5433
+
+## Env / Config notes
+
+- Convex URL: `https://opulent-hummingbird-838.convex.cloud`
+- Mac mini should remain **client-only** (no server).
+- Prefer using **meta constraints** to target Mac mini (e.g. `meta.role=witness`).
+
+## Operational gotchas (findings)
+
+- Nomad Docker driver may block host mounts unless docker volumes are enabled in client config.
+- Stateful services require correct host dir permissions (`/opt/...`).
+- Convex free plan can disable deployments; ingestion/repair workers should handle `{status:"error"}` HTTP responses gracefully.
+
+## References
+
+- Timescale HA runbook: `HA_TIMESCALE_RUNBOOK.md`
+- History API runbook: `../history-api/RUNBOOK.md`
