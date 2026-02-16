@@ -91,7 +91,10 @@ job "vietmarket-candles" {
         START_1D   = "2000-01-01"
         CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
       }
-      resources { cpu = 500 memory = 512 }
+      resources {
+        cpu    = 500
+        memory = 512
+      }
     }
 
     task "candles_backfill_1h" {
@@ -117,7 +120,10 @@ job "vietmarket-candles" {
         START_1H   = "2000-01-01"
         CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
       }
-      resources { cpu = 500 memory = 512 }
+      resources {
+        cpu    = 500
+        memory = 512
+      }
     }
 
     task "candles_backfill_15m" {
@@ -143,7 +149,10 @@ job "vietmarket-candles" {
         START_15M  = "2000-01-01"
         CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
       }
-      resources { cpu = 500 memory = 512 }
+      resources {
+        cpu    = 500
+        memory = 512
+      }
     }
   }
 
@@ -174,7 +183,10 @@ job "vietmarket-candles" {
         STALE_MINUTES_LATEST = "10"
         STALE_MINUTES_DEEP   = "30"
       }
-      resources { cpu = 750 memory = 768 }
+      resources {
+        cpu    = 750
+        memory = 768
+      }
     }
   }
 }
