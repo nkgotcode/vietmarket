@@ -34,7 +34,7 @@ job "pg-haproxy" {
 
       template {
         destination = "local/haproxy.cfg"
-        data = <<'CFG'
+        data = <<CFG
 global
   maxconn 4096
 
