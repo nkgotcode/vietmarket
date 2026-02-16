@@ -165,7 +165,12 @@ job "vietmarket-candles" {
 
     # Standby does the same work but will usually skip due to leases.
     # We keep update/restart settings simple.
-    restart { attempts = 10 interval = "30m" delay = "15s" mode = "delay" }
+    restart {
+      attempts = 10
+      interval = "30m"
+      delay    = "15s"
+      mode     = "delay"
+    }
 
     task "candles_bundle" {
       driver = "docker"
