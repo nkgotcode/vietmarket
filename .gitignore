@@ -1,6 +1,9 @@
 # dependencies
 node_modules/
 
+# python venv
+.venv/
+
 # runtime scratch
 tmp/
 backups/
@@ -11,8 +14,11 @@ data/
 __pycache__/
 *.pyc
 
-# local agent memory (user-specific)
+# OpenClaw / local agent state (do not commit)
 memory/
+canvas/
+AGENTS.md
+SOUL.md
 MEMORY.md
 IDENTITY.md
 USER.md
