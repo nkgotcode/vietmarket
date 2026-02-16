@@ -10,7 +10,7 @@ CONVEX_URL="${CONVEX_URL:-${NEXT_PUBLIC_CONVEX_URL:-https://opulent-hummingbird-
 export CONVEX_URL
 
 UNIVERSE_FILE="$ROOT/data/simplize/universe.latest.json"
-CURSOR_FILE="$ROOT/tmp/vietmarket_candles_cursor.json"
+CURSOR_FILE="${CURSOR_FILE:-$ROOT/tmp/vietmarket_candles_cursor.json}"
 BATCH_SIZE="${BATCH_SIZE:-20}"
 TFS="${TFS:-1d,1h,15m}"
 
@@ -25,13 +25,30 @@ cursor_file = Path(os.environ.get('CURSOR_FILE', str(root/'tmp/vietmarket_candle
 batch_size = int(os.environ.get('BATCH_SIZE', '20'))
 tfs = os.environ.get('TFS', '1d,1h,15m')
 
+# Sharding + HA lease coordination
+job_name = os.environ.get('JOB_NAME', 'candles')
+node_id = os.environ.get('NODE_ID', 'unknown-node')
+shard_count = int(os.environ.get('SHARD_COUNT', '12'))
+shard_index = int(os.environ.get('SHARD_INDEX', '0'))
+stale_minutes = int(os.environ.get('STALE_MINUTES', '30'))
+lease_ms = int(os.environ.get('LEASE_MS', str(5*60_000)))
+
 obj = json.loads(universe_file.read_text('utf-8'))
-tickers = [t.strip().upper() for t in obj.get('tickers', []) if str(t).strip()]
+tickers_all = [t.strip().upper() for t in obj.get('tickers', []) if str(t).strip()]
 
 # Include VN indices.
 for x in ['VNINDEX','HNXINDEX','UPCOMINDEX']:
-    if x not in tickers:
-        tickers.append(x)
+    if x not in tickers_all:
+        tickers_all.append(x)
+
+# Stable sharding by sha1(ticker)
+import hashlib
+
+def shard_of(t: str) -> int:
+    h = hashlib.sha1(t.encode('utf-8')).hexdigest()
+    return int(h[:8], 16) % max(shard_count, 1)
+
+tickers = [t for t in tickers_all if shard_of(t) == (shard_index % max(shard_count, 1))]
 
 # load cursor
 cur = {'nextIndex': 0}
@@ -76,6 +93,34 @@ for tf in [x.strip() for x in tfs.split(',') if x.strip()]:
     else:
         raise SystemExit(f'Unsupported tf: {tf}')
 
+def convex_mutation(path: str, args: dict, timeout_s: int = 20) -> dict:
+    url = os.environ.get('CONVEX_URL', '').rstrip('/') + '/api/mutation'
+    r = requests.post(url, json={'path': path, 'args': args}, timeout=timeout_s)
+    r.raise_for_status()
+    return r.json()
+
+# Try to claim lease for this shard. If we can't, exit quietly.
+try:
+    import requests
+    if os.environ.get('CONVEX_URL'):
+        lease = convex_mutation('leases:tryClaim', {
+            'job': job_name,
+            'shard': shard_index,
+            'ownerId': node_id,
+            'leaseMs': lease_ms,
+            'staleMinutes': stale_minutes,
+            'meta': f"tickers_in_shard={n}",
+        })
+        val = lease.get('value', lease)
+        if not (isinstance(val, dict) and val.get('ok')):
+            # Not owner.
+            print(json.dumps({'ok': True, 'skipped': 'not_owner', 'job': job_name, 'shard': shard_index, 'owner': val.get('ownerId') if isinstance(val, dict) else None}))
+            sys.exit(0)
+except Exception:
+    # If lease fails (network), be safe: do nothing.
+    print(json.dumps({'ok': True, 'skipped': 'lease_error'}))
+    sys.exit(0)
+
 next_index = (start + batch_size) % max(n, 1)
 cur = {
     'updatedAt': datetime.now(timezone.utc).isoformat(timespec='seconds'),
@@ -87,5 +132,17 @@ cur = {
 cursor_file.parent.mkdir(parents=True, exist_ok=True)
 cursor_file.write_text(json.dumps(cur, indent=2), encoding='utf-8')
 
-print(json.dumps({'ok': True, 'selected': sel, 'nextIndex': next_index, 'universeCount': n}, indent=2))
+# Report progress.
+try:
+    if os.environ.get('CONVEX_URL'):
+        convex_mutation('leases:reportProgress', {
+            'job': job_name,
+            'shard': shard_index,
+            'ownerId': node_id,
+            'meta': f"nextIndex={next_index} last={sel[-1] if sel else ''}",
+        })
+except Exception:
+    pass
+
+print(json.dumps({'ok': True, 'selected': sel, 'nextIndex': next_index, 'universeCount': n, 'cursorFile': str(cursor_file), 'job': job_name, 'shard': shard_index, 'nodeId': node_id}, indent=2))
 PY
