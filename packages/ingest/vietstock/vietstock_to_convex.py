@@ -31,8 +31,8 @@ def convex_url() -> str:
     return u.rstrip('/')
 
 
-def convex_mutation(path: str, args: dict, timeout_s: int = 60) -> dict:
-    url = convex_url() + '/api/mutation'
+def convex_action(path: str, args: dict, timeout_s: int = 90) -> dict:
+    url = convex_url() + '/api/action'
     r = requests.post(url, json={'path': path, 'args': args}, timeout=timeout_s)
     r.raise_for_status()
     return r.json()
@@ -138,7 +138,7 @@ def main(argv: list[str]) -> int:
         # Convex validators treat optional fields as "undefined"; avoid sending JSON null.
         payload = {k: v for k, v in payload.items() if v is not None}
 
-        out = convex_mutation('articles:upsertWithText', payload, timeout_s=90)
+        out = convex_action('articles:upsertWithText', payload, timeout_s=120)
         _ = out.get('value', out)
 
         synced += 1

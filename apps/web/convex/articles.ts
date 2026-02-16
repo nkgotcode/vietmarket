@@ -1,4 +1,4 @@
-import { mutation, query } from './_generated/server';
+import { action, query } from './_generated/server';
 import { v } from 'convex/values';
 
 function sha256Hex(input: Uint8Array): Promise<string> {
@@ -10,7 +10,7 @@ function sha256Hex(input: Uint8Array): Promise<string> {
   });
 }
 
-export const upsertWithText = mutation({
+export const upsertWithText = action({
   args: {
     url: v.string(),
     source: v.string(),
@@ -28,21 +28,20 @@ export const upsertWithText = mutation({
 
     const preview = args.text.slice(0, 5000);
 
-    const existing = await ctx.db
-      .query('articles')
-      .withIndex('by_url', (q) => q.eq('url', args.url))
-      .unique();
+    const existing = await ctx.runQuery(api.articles.getByUrl, { url: args.url });
 
     // If text is unchanged, just ensure metadata exists.
     if (existing && existing.textSha256 === textSha256) {
-      await ctx.db.patch(existing._id, {
+      await ctx.runMutation(api.articles.upsertMeta, {
+        url: args.url,
         source: args.source,
         title: args.title,
-        publishedAt: args.publishedAt,
-        lang: args.lang,
-        wordCount: args.wordCount,
+        publishedAt: args.publishedAt ?? undefined,
+        lang: args.lang ?? undefined,
+        wordCount: args.wordCount ?? undefined,
         textPreview: preview,
-        ingestedAt: now,
+        textFileId: existing.textFileId ?? undefined,
+        textSha256,
       });
       return { ok: true, updated: true, stored: false, url: args.url };
     }
@@ -51,37 +50,23 @@ export const upsertWithText = mutation({
     const blob = new Blob([bytes], { type: 'text/plain; charset=utf-8' });
     const fileId = await ctx.storage.store(blob);
 
-    if (!existing) {
-      await ctx.db.insert('articles', {
-        url: args.url,
-        source: args.source,
-        title: args.title,
-        publishedAt: args.publishedAt,
-        lang: args.lang,
-        wordCount: args.wordCount,
-        textPreview: preview,
-        textFileId: fileId,
-        textSha256,
-        ingestedAt: now,
-      });
-      return { ok: true, inserted: true, stored: true, url: args.url };
-    }
-
-    await ctx.db.patch(existing._id, {
+    await ctx.runMutation(api.articles.upsertMeta, {
+      url: args.url,
       source: args.source,
       title: args.title,
-      publishedAt: args.publishedAt,
-      lang: args.lang,
-      wordCount: args.wordCount,
+      publishedAt: args.publishedAt ?? undefined,
+      lang: args.lang ?? undefined,
+      wordCount: args.wordCount ?? undefined,
       textPreview: preview,
       textFileId: fileId,
       textSha256,
-      ingestedAt: now,
     });
 
     return { ok: true, updated: true, stored: true, url: args.url };
   },
 });
+
+import { api } from './_generated/api';
 
 export const getTextUrl = query({
   args: { url: v.string() },
