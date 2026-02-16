@@ -53,14 +53,21 @@ def convex_query(path: str, args: dict) -> dict:
     url = convex_url() + '/api/query'
     r = requests.post(url, json={'path': path, 'args': args}, timeout=60)
     r.raise_for_status()
-    return r.json()
+    j = r.json()
+    # Convex HTTP API returns {status:"success", value:...} or {status:"error", errorMessage:...}
+    if isinstance(j, dict) and j.get('status') == 'error':
+        raise RuntimeError(f"Convex query failed: {j.get('errorMessage') or j}")
+    return j
 
 
 def convex_mutation(path: str, args: dict) -> dict:
     url = convex_url() + '/api/mutation'
     r = requests.post(url, json={'path': path, 'args': args}, timeout=60)
     r.raise_for_status()
-    return r.json()
+    j = r.json()
+    if isinstance(j, dict) and j.get('status') == 'error':
+        raise RuntimeError(f"Convex mutation failed: {j.get('errorMessage') or j}")
+    return j
 
 
 def ms_to_date(ms: int) -> str:
@@ -71,7 +78,12 @@ def main(argv: list[str]) -> int:
     args = parse_args(argv)
 
     out = convex_query('repairQueue:nextQueued', {'limit': args.limit})
+
     items = out.get('value') if isinstance(out, dict) and 'value' in out else out
+    if isinstance(items, dict):
+        # Defensive: avoid iterating dict keys and producing confusing TypeErrors.
+        raise RuntimeError(f"Unexpected nextQueued payload shape: {items}")
+
     if not items:
         print(json.dumps({'ok': True, 'processed': 0, 'reason': 'no queued items'}))
         return 0
