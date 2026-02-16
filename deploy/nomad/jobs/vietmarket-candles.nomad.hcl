@@ -23,7 +23,7 @@ job "vietmarket-candles" {
   ############################
 
   group "primary_latest" {
-    count = 12
+    count = 10
 
     constraint {
       attribute = "${node.unique.name}"
@@ -222,7 +222,7 @@ job "vietmarket-candles" {
   ############################
 
   group "standby_latest" {
-    count = 12
+    count = 10
 
     constraint {
       attribute = "${node.unique.name}"
