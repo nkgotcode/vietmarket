@@ -135,6 +135,8 @@ def main(argv: list[str]) -> int:
             'wordCount': int(art.word_count) if art.word_count is not None else None,
             'text': text,
         }
+        # Convex validators treat optional fields as "undefined"; avoid sending JSON null.
+        payload = {k: v for k, v in payload.items() if v is not None}
 
         out = convex_mutation('articles:upsertWithText', payload, timeout_s=90)
         _ = out.get('value', out)

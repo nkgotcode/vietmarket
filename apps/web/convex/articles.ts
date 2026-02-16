@@ -15,9 +15,9 @@ export const upsertWithText = mutation({
     url: v.string(),
     source: v.string(),
     title: v.string(),
-    publishedAt: v.optional(v.string()),
-    lang: v.optional(v.string()),
-    wordCount: v.optional(v.number()),
+    publishedAt: v.optional(v.union(v.string(), v.null())),
+    lang: v.optional(v.union(v.string(), v.null())),
+    wordCount: v.optional(v.union(v.number(), v.null())),
     text: v.string(),
   },
   handler: async (ctx, args) => {
