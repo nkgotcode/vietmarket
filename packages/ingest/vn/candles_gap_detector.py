@@ -21,7 +21,7 @@ import requests
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument('--universe', default='/Users/lenamkhanh/vietmarket/data/simplize/universe.latest.json')
+    p.add_argument('--universe', default=os.environ.get('UNIVERSE_FILE', 'data/simplize/universe.latest.json'))
     p.add_argument('--limit-tickers', type=int, default=40)
     p.add_argument('--tfs', default='1d,1h,15m')
     p.add_argument('--bars', type=int, default=500)

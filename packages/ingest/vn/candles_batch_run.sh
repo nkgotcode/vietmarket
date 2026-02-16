@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/Users/lenamkhanh/vietmarket"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
-source "$ROOT/.venv/bin/activate"
+# Use local venv if present (dev on mac mini). Containers won't have it.
+if [ -f "$ROOT/.venv/bin/activate" ]; then
+  source "$ROOT/.venv/bin/activate"
+fi
 
 CONVEX_URL="${CONVEX_URL:-${NEXT_PUBLIC_CONVEX_URL:-https://opulent-hummingbird-838.convex.cloud}}"
 export CONVEX_URL
+
+# Provide a stable root path for embedded python.
+export VIETMARKET_ROOT="$ROOT"
 
 UNIVERSE_FILE="$ROOT/data/simplize/universe.latest.json"
 CURSOR_FILE="${CURSOR_FILE:-$ROOT/tmp/vietmarket_candles_cursor.json}"
@@ -19,7 +25,7 @@ import json, os, subprocess, sys
 from pathlib import Path
 from datetime import datetime, timezone
 
-root = Path('/Users/lenamkhanh/vietmarket')
+root = Path(os.environ.get('VIETMARKET_ROOT', '.')).resolve()
 universe_file = Path(os.environ.get('UNIVERSE_FILE', str(root/'data/simplize/universe.latest.json')))
 batch_size = int(os.environ.get('BATCH_SIZE', '20'))
 tfs = os.environ.get('TFS', '1d,1h,15m')
