@@ -11,6 +11,13 @@ job "clickhouse" {
   group "ch" {
     network {
       mode = "host"
+
+      port "http" {
+        static = 8123
+      }
+      port "native" {
+        static = 9000
+      }
     }
 
     task "clickhouse" {
@@ -44,7 +51,7 @@ job "clickhouse" {
 
       service {
         name = "clickhouse"
-        port = "8123"
+        port = "http"
       }
     }
   }
