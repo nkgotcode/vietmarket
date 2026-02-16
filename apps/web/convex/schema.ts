@@ -67,7 +67,26 @@ export default defineSchema({
     .index('by_ticker', ['ticker'])
     .index('by_ticker_metric', ['ticker', 'metric']),
 
-  // Audit log for self-heal runs (gap repairs). This is lightweight state in Convex.
+  // Repair queue: gap detector enqueues work; worker marks done.
+  candleRepairQueue: defineTable({
+    ticker: v.string(),
+    tf: v.union(v.literal('1d'), v.literal('1h'), v.literal('15m')),
+    windowStartTs: v.number(),
+    windowEndTs: v.number(),
+    expectedBars: v.number(),
+    note: v.optional(v.string()),
+
+    status: v.union(v.literal('queued'), v.literal('running'), v.literal('done'), v.literal('error')),
+    attempts: v.number(),
+    lastError: v.optional(v.string()),
+
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_status_created', ['status', 'createdAt'])
+    .index('by_ticker_tf_window', ['ticker', 'tf', 'windowStartTs', 'windowEndTs']),
+
+  // Audit log for self-heal runs.
   candleRepairs: defineTable({
     ticker: v.string(),
     tf: v.union(v.literal('1d'), v.literal('1h'), v.literal('15m')),
