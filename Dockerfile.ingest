@@ -25,5 +25,4 @@ COPY packages/ingest ./packages/ingest
 ENV VIETMARKET_ROOT=/app \
     UNIVERSE_FILE=/app/packages/ingest/vn/universe.default.json
 
-ENTRYPOINT ["bash","-lc"]
-CMD ["packages/ingest/vn/candles_batch_run.sh"]
+CMD ["bash","-lc","packages/ingest/vn/candles_batch_run.sh"]
