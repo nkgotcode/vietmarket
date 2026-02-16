@@ -49,10 +49,7 @@ job "clickhouse" {
         memory = 2048
       }
 
-      service {
-        name = "clickhouse"
-        port = "http"
-      }
+      # service registration disabled (avoids Consul requirement)
     }
   }
 }
