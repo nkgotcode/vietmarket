@@ -27,9 +27,7 @@ job "vietmarket-candles-latest" {
       driver = "docker"
 
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "bash"
-        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
       }
 
       env {
@@ -72,9 +70,7 @@ job "vietmarket-candles-latest" {
       driver = "docker"
 
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "bash"
-        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
       }
 
       env {

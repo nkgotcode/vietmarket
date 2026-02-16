@@ -24,9 +24,7 @@ job "vietmarket-candles-backfill" {
     task "backfill_1d" {
       driver = "docker"
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "bash"
-        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
       }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
@@ -58,9 +56,7 @@ job "vietmarket-candles-backfill" {
     task "backfill_1h" {
       driver = "docker"
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "bash"
-        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
       }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
@@ -94,9 +90,7 @@ job "vietmarket-candles-backfill" {
     task "backfill_15m" {
       driver = "docker"
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "bash"
-        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
       }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
@@ -129,9 +123,7 @@ job "vietmarket-candles-backfill" {
     task "backfill_1d" {
       driver = "docker"
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "bash"
-        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
       }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
@@ -162,9 +154,7 @@ job "vietmarket-candles-backfill" {
     task "backfill_1h" {
       driver = "docker"
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "bash"
-        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
       }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
@@ -197,9 +187,7 @@ job "vietmarket-candles-backfill" {
     task "backfill_15m" {
       driver = "docker"
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "bash"
-        args    = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
+        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
       }
       env {
         CONVEX_URL    = "https://opulent-hummingbird-838.convex.cloud"
