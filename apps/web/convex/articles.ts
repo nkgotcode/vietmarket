@@ -1,5 +1,6 @@
 import { action, query } from './_generated/server';
 import { v } from 'convex/values';
+import { api } from './_generated/api';
 
 function sha256Hex(input: Uint8Array): Promise<string> {
   return crypto.subtle.digest('SHA-256', input).then((buf) => {
@@ -28,11 +29,11 @@ export const upsertWithText = action({
 
     const preview = args.text.slice(0, 5000);
 
-    const existing = await ctx.runQuery(api.articles.getByUrl, { url: args.url });
+    const existing = await ctx.runQuery(api.articlesMeta.getByUrl, { url: args.url });
 
     // If text is unchanged, just ensure metadata exists.
     if (existing && existing.textSha256 === textSha256) {
-      await ctx.runMutation(api.articles.upsertMeta, {
+      await ctx.runMutation(api.articlesMeta.upsertMeta, {
         url: args.url,
         source: args.source,
         title: args.title,
@@ -50,7 +51,7 @@ export const upsertWithText = action({
     const blob = new Blob([bytes], { type: 'text/plain; charset=utf-8' });
     const fileId = await ctx.storage.store(blob);
 
-    await ctx.runMutation(api.articles.upsertMeta, {
+    await ctx.runMutation(api.articlesMeta.upsertMeta, {
       url: args.url,
       source: args.source,
       title: args.title,
@@ -65,8 +66,6 @@ export const upsertWithText = action({
     return { ok: true, updated: true, stored: true, url: args.url };
   },
 });
-
-import { api } from './_generated/api';
 
 export const getTextUrl = query({
   args: { url: v.string() },
