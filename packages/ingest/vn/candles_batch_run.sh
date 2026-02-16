@@ -52,6 +52,17 @@ else:
 obj = json.loads(universe_file.read_text('utf-8'))
 tickers_all = [t.strip().upper() for t in obj.get('tickers', []) if str(t).strip()]
 
+# Filter universe down to VN equities only (avoid crypto/derivatives like XRPUSDT, X77, etc.)
+import re
+VN_EQ_RE = re.compile(r'^[A-Z]{3,5}$')
+
+def is_vn_equity(sym: str) -> bool:
+    if sym in ('VNINDEX', 'HNXINDEX', 'UPCOMINDEX'):
+        return True
+    return bool(VN_EQ_RE.match(sym))
+
+tickers_all = [t for t in tickers_all if is_vn_equity(t)]
+
 include_indices = os.environ.get('INCLUDE_INDICES', '1') not in ('0','false','False','no','NO')
 if include_indices:
     # Include VN indices.
@@ -149,33 +160,7 @@ for tf in [x.strip() for x in tfs.split(',') if x.strip()]:
     else:
         raise SystemExit(f'Unsupported tf: {tf}')
 
-def convex_mutation(path: str, args: dict, timeout_s: int = 20) -> dict:
-    url = os.environ.get('CONVEX_URL', '').rstrip('/') + '/api/mutation'
-    r = requests.post(url, json={'path': path, 'args': args}, timeout=timeout_s)
-    r.raise_for_status()
-    return r.json()
-
-# Try to claim lease for this shard. If we can't, exit quietly.
-try:
-    import requests
-    if os.environ.get('CONVEX_URL'):
-        lease = convex_mutation('leases:tryClaim', {
-            'job': job_name,
-            'shard': shard_index,
-            'ownerId': node_id,
-            'leaseMs': lease_ms,
-            'staleMinutes': stale_minutes,
-            'meta': f"tickers_in_shard={n}",
-        })
-        val = lease.get('value', lease)
-        if not (isinstance(val, dict) and val.get('ok')):
-            # Not owner.
-            print(json.dumps({'ok': True, 'skipped': 'not_owner', 'job': job_name, 'shard': shard_index, 'owner': val.get('ownerId') if isinstance(val, dict) else None}))
-            sys.exit(0)
-except Exception:
-    # If lease fails (network), be safe: do nothing.
-    print(json.dumps({'ok': True, 'skipped': 'lease_error'}))
-    sys.exit(0)
+# (Lease already claimed before doing any work.)
 
 next_index = (start + batch_size) % max(n, 1)
 cur = {
