@@ -20,8 +20,19 @@ from datetime import datetime
 
 import requests
 
-# reuse existing backfill fetcher
-from packages.ingest.vn.candles_backfill import fetch_candles_vci, tf_to_interval, ts_to_ms
+# reuse existing backfill fetcher (local file import)
+from pathlib import Path
+import importlib.util
+
+_backfill_path = Path(__file__).resolve().parent / 'candles_backfill.py'
+spec = importlib.util.spec_from_file_location('candles_backfill', str(_backfill_path))
+mod = importlib.util.module_from_spec(spec)
+assert spec and spec.loader
+spec.loader.exec_module(mod)
+
+fetch_candles_vci = mod.fetch_candles_vci
+tf_to_interval = mod.tf_to_interval
+ts_to_ms = mod.ts_to_ms
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
