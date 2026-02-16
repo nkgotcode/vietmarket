@@ -66,4 +66,16 @@ export default defineSchema({
   })
     .index('by_ticker', ['ticker'])
     .index('by_ticker_metric', ['ticker', 'metric']),
+
+  // Audit log for self-heal runs (gap repairs). This is lightweight state in Convex.
+  candleRepairs: defineTable({
+    ticker: v.string(),
+    tf: v.union(v.literal('1d'), v.literal('1h'), v.literal('15m')),
+    windowStartTs: v.number(),
+    windowEndTs: v.number(),
+    missingCount: v.number(),
+    note: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index('by_ticker_tf_created', ['ticker', 'tf', 'createdAt']),
 });
