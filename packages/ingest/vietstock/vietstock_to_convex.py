@@ -52,7 +52,7 @@ class Article:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument('--db', default=str(Path('~/.clawdbot/vietstock-archive/archive.sqlite').expanduser()))
+    p.add_argument('--db', default=os.environ.get('VIETSTOCK_ARCHIVE_DB', str(Path('/Users/lenamkhanh/vietstock-archive-data/archive.sqlite'))))
     p.add_argument('--cursor-file', default='tmp/vietmarket_vietstock_cursor.json')
     p.add_argument('--limit', type=int, default=50)
     p.add_argument('--since', help='ISO timestamp to start from (overrides cursor)')

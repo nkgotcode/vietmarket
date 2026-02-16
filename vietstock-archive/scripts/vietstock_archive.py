@@ -33,7 +33,9 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
-ROOT = Path("/Users/lenamkhanh/.clawdbot/vietstock-archive")
+# Archive root lives *next to* the vietmarket repo (not inside it, not in ~/.clawdbot).
+# Default: /Users/lenamkhanh/vietstock-archive-data
+ROOT = Path(os.environ.get("VIETSTOCK_ARCHIVE_ROOT", "/Users/lenamkhanh/vietstock-archive-data"))
 DB_PATH = ROOT / "archive.sqlite"
 HTML_DIR = ROOT / "html"
 TEXT_DIR = ROOT / "text"
