@@ -68,6 +68,20 @@ export default defineSchema({
     .index('by_ticker_metric', ['ticker', 'metric']),
 
   // Repair queue: gap detector enqueues work; worker marks done.
+  // Shard leases: coordinate HA workers across nodes.
+  shardLeases: defineTable({
+    job: v.string(),
+    shard: v.number(),
+    ownerId: v.string(),
+    leaseUntilMs: v.number(),
+    lastProgressAtMs: v.number(),
+    meta: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index('by_job_shard', ['job', 'shard'])
+    .index('by_job_owner', ['job', 'ownerId'])
+    .index('by_lease_until', ['leaseUntilMs']),
+
   candleRepairQueue: defineTable({
     ticker: v.string(),
     tf: v.union(v.literal('1d'), v.literal('1h'), v.literal('15m')),
