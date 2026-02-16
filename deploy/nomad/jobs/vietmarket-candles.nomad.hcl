@@ -2,6 +2,12 @@ job "vietmarket-candles" {
   datacenters = ["dc1"]
   type = "service"
 
+  # Disable deployments if nodes are down.
+  constraint {
+    attribute = "${node.class}"
+    value     = "linux"
+  }
+
   # Run primary on optiplex; standby on epyc.
   group "primary" {
     count = 12
@@ -31,8 +37,8 @@ job "vietmarket-candles" {
 
       config {
         image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "vietmarket-ingest"
-        args = ["candles", "latest"]
+        command = "bash"
+        args = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
       }
 
       env {
@@ -43,6 +49,19 @@ job "vietmarket-candles" {
         SHARD_INDEX    = "${NOMAD_ALLOC_INDEX}"
         STALE_MINUTES  = "10"
         LEASE_MS       = "300000"
+
+        # job params
+        BATCH_SIZE = "8"
+        TFS        = "1d,1h,15m"
+        INCLUDE_INDICES = "0"
+        RUN_TIMEOUT_SEC = "300"
+
+        # rolling windows (start dates are fixed in UTC here; adjust later if you want dynamic)
+        START_1D  = "2026-01-01"
+        START_1H  = "2026-02-01"
+        START_15M = "2026-02-01"
+
+        CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
       }
 
       resources {
@@ -55,8 +74,8 @@ job "vietmarket-candles" {
       driver = "docker"
       config {
         image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "vietmarket-ingest"
-        args = ["candles", "backfill", "--tf", "1d", "--start", "2000-01-01"]
+        command = "bash"
+        args = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
       }
       env {
         CONVEX_URL     = "https://opulent-hummingbird-838.convex.cloud"
@@ -66,6 +85,11 @@ job "vietmarket-candles" {
         SHARD_INDEX    = "${NOMAD_ALLOC_INDEX}"
         STALE_MINUTES  = "30"
         LEASE_MS       = "300000"
+
+        BATCH_SIZE = "1"
+        TFS        = "1d"
+        START_1D   = "2000-01-01"
+        CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
       }
       resources { cpu = 500 memory = 512 }
     }
@@ -74,8 +98,8 @@ job "vietmarket-candles" {
       driver = "docker"
       config {
         image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "vietmarket-ingest"
-        args = ["candles", "backfill", "--tf", "1h", "--start", "2000-01-01"]
+        command = "bash"
+        args = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
       }
       env {
         CONVEX_URL     = "https://opulent-hummingbird-838.convex.cloud"
@@ -85,6 +109,13 @@ job "vietmarket-candles" {
         SHARD_INDEX    = "${NOMAD_ALLOC_INDEX}"
         STALE_MINUTES  = "30"
         LEASE_MS       = "300000"
+
+        BATCH_SIZE = "1"
+        TFS        = "1h"
+        INCLUDE_INDICES = "0"
+        RUN_TIMEOUT_SEC = "300"
+        START_1H   = "2000-01-01"
+        CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
       }
       resources { cpu = 500 memory = 512 }
     }
@@ -93,8 +124,8 @@ job "vietmarket-candles" {
       driver = "docker"
       config {
         image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "vietmarket-ingest"
-        args = ["candles", "backfill", "--tf", "15m", "--start", "2000-01-01"]
+        command = "bash"
+        args = ["-lc", "packages/ingest/vn/candles_batch_run.sh"]
       }
       env {
         CONVEX_URL     = "https://opulent-hummingbird-838.convex.cloud"
@@ -104,6 +135,13 @@ job "vietmarket-candles" {
         SHARD_INDEX    = "${NOMAD_ALLOC_INDEX}"
         STALE_MINUTES  = "30"
         LEASE_MS       = "300000"
+
+        BATCH_SIZE = "1"
+        TFS        = "15m"
+        INCLUDE_INDICES = "0"
+        RUN_TIMEOUT_SEC = "300"
+        START_15M  = "2000-01-01"
+        CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
       }
       resources { cpu = 500 memory = 512 }
     }
