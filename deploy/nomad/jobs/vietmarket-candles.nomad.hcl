@@ -3,8 +3,9 @@ job "vietmarket-candles" {
   type        = "service"
 
   # Only run on Linux clients.
+  # Constrain to Linux hosts (Nomad reports kernel name as 'linux').
   constraint {
-    attribute = "${attr.os.name}"
+    attribute = "${attr.kernel.name}"
     value     = "linux"
   }
 
