@@ -21,7 +21,6 @@ from datetime import datetime, timezone
 
 root = Path('/Users/lenamkhanh/vietmarket')
 universe_file = Path(os.environ.get('UNIVERSE_FILE', str(root/'data/simplize/universe.latest.json')))
-cursor_file = Path(os.environ.get('CURSOR_FILE', str(root/'tmp/vietmarket_candles_cursor.json')))
 batch_size = int(os.environ.get('BATCH_SIZE', '20'))
 tfs = os.environ.get('TFS', '1d,1h,15m')
 
@@ -32,6 +31,17 @@ shard_count = int(os.environ.get('SHARD_COUNT', '12'))
 shard_index = int(os.environ.get('SHARD_INDEX', '0'))
 stale_minutes = int(os.environ.get('STALE_MINUTES', '30'))
 lease_ms = int(os.environ.get('LEASE_MS', str(5*60_000)))
+
+# Cursor file: MUST be per-shard to avoid corruption when running SHARD_COUNT>1.
+# - If CURSOR_FILE is set, use it.
+# - Else if CURSOR_DIR is set, write ${CURSOR_DIR}/${JOB_NAME}_${SHARD_INDEX}.json
+# - Else default to tmp/${JOB_NAME}_${SHARD_INDEX}.json
+cursor_env = os.environ.get('CURSOR_FILE')
+if cursor_env:
+    cursor_file = Path(cursor_env)
+else:
+    cursor_dir = Path(os.environ.get('CURSOR_DIR', str(root/'tmp')))
+    cursor_file = cursor_dir / f"{job_name}_{shard_index}.json"
 
 obj = json.loads(universe_file.read_text('utf-8'))
 tickers_all = [t.strip().upper() for t in obj.get('tickers', []) if str(t).strip()]
