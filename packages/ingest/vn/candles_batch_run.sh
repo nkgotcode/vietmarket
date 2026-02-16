@@ -36,10 +36,12 @@ lease_ms = int(os.environ.get('LEASE_MS', str(5*60_000)))
 obj = json.loads(universe_file.read_text('utf-8'))
 tickers_all = [t.strip().upper() for t in obj.get('tickers', []) if str(t).strip()]
 
-# Include VN indices.
-for x in ['VNINDEX','HNXINDEX','UPCOMINDEX']:
-    if x not in tickers_all:
-        tickers_all.append(x)
+include_indices = os.environ.get('INCLUDE_INDICES', '1') not in ('0','false','False','no','NO')
+if include_indices:
+    # Include VN indices.
+    for x in ['VNINDEX','HNXINDEX','UPCOMINDEX']:
+        if x not in tickers_all:
+            tickers_all.append(x)
 
 # Stable sharding by sha1(ticker)
 import hashlib
@@ -49,6 +51,33 @@ def shard_of(t: str) -> int:
     return int(h[:8], 16) % max(shard_count, 1)
 
 tickers = [t for t in tickers_all if shard_of(t) == (shard_index % max(shard_count, 1))]
+
+import requests
+
+def convex_mutation(path: str, args: dict, timeout_s: int = 20) -> dict:
+    url = os.environ.get('CONVEX_URL', '').rstrip('/') + '/api/mutation'
+    r = requests.post(url, json={'path': path, 'args': args}, timeout=timeout_s)
+    r.raise_for_status()
+    return r.json()
+
+# Try to claim lease for this shard BEFORE doing any work.
+try:
+    if os.environ.get('CONVEX_URL'):
+        lease = convex_mutation('leases:tryClaim', {
+            'job': job_name,
+            'shard': shard_index,
+            'ownerId': node_id,
+            'leaseMs': lease_ms,
+            'staleMinutes': stale_minutes,
+            'meta': f"boot shard_count={shard_count}",
+        })
+        val = lease.get('value', lease)
+        if not (isinstance(val, dict) and val.get('ok')):
+            print(json.dumps({'ok': True, 'skipped': 'not_owner', 'job': job_name, 'shard': shard_index, 'owner': val.get('ownerId') if isinstance(val, dict) else None}))
+            sys.exit(0)
+except Exception as e:
+    print(json.dumps({'ok': True, 'skipped': 'lease_error', 'error': str(e)}))
+    sys.exit(0)
 
 # load cursor
 cur = {'nextIndex': 0}
@@ -72,6 +101,8 @@ start_1d = os.environ.get('START_1D', '2000-01-01')
 start_1h = os.environ.get('START_1H', '2000-01-01')
 start_15m = os.environ.get('START_15M', '2000-01-01')
 
+run_timeout = int(os.environ.get('RUN_TIMEOUT_SEC', '300'))
+
 def run(tf: str, start_date: str):
     cmd = [
         'python3',
@@ -82,7 +113,16 @@ def run(tf: str, start_date: str):
         '--chunk', os.environ.get('CHUNK', '1200'),
         '--sleep', os.environ.get('SLEEP', '0.02'),
     ]
-    p = subprocess.run(cmd, cwd=str(root), env=os.environ.copy(), text=True)
+    # Pass through INCLUDE_INDICES policy by adding a flag.
+    if not include_indices:
+        cmd.append('--exclude-indices')
+
+    try:
+        p = subprocess.run(cmd, cwd=str(root), env=os.environ.copy(), text=True, timeout=run_timeout)
+    except subprocess.TimeoutExpired:
+        print(json.dumps({'ok': False, 'error': 'run_timeout', 'tf': tf, 'timeoutSec': run_timeout, 'tickers': sel[:3]}))
+        sys.exit(124)
+
     if p.returncode != 0:
         sys.exit(p.returncode)
 

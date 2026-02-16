@@ -47,6 +47,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument('--end', default=None, help='End date (YYYY-MM-DD) optional')
     p.add_argument('--chunk', type=int, default=1000, help='Candles per Convex call')
     p.add_argument('--sleep', type=float, default=0.15, help='Sleep seconds between Convex calls')
+    p.add_argument('--include-indices', action='store_true', default=True, help='Include VN indices (VNINDEX/HNXINDEX/UPCOMINDEX)')
+    p.add_argument('--exclude-indices', action='store_true', help='Do not include indices (useful for intraday)')
     p.add_argument('--dry-run', action='store_true')
     return p.parse_args(argv)
 
@@ -65,12 +67,15 @@ def load_tickers(args: argparse.Namespace) -> list[str]:
         else:
             tickers = [t.strip().upper() for t in text.split() if t.strip()]
 
+    include_indices = args.include_indices and (not args.exclude_indices)
+
     # add a few VN indices (vnstock expects names containing INDEX)
     # We'll start with the common ones; adjust later if needed.
-    idx = ['VNINDEX', 'HNXINDEX', 'UPCOMINDEX']
-    for x in idx:
-        if x not in tickers:
-            tickers.append(x)
+    if include_indices:
+        idx = ['VNINDEX', 'HNXINDEX', 'UPCOMINDEX']
+        for x in idx:
+            if x not in tickers:
+                tickers.append(x)
 
     # uniq preserve order
     seen = set()
