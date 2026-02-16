@@ -1,19 +1,39 @@
 import express from 'express';
+import pg from 'pg';
+
+const { Pool } = pg;
 
 const app = express();
 
 const PORT = Number(process.env.PORT || 8787);
 const API_KEY = process.env.API_KEY || '';
-const CLICKHOUSE_URL = (process.env.CLICKHOUSE_URL || 'http://127.0.0.1:8123').replace(/\/$/, '');
-const CLICKHOUSE_DB = process.env.CLICKHOUSE_DB || 'vietmarket';
+
+// Example:
+//   postgres://vietmarket:password@100.103.201.10:5432/vietmarket?sslmode=disable
+const PG_URL = process.env.PG_URL || '';
 
 function authOk(req) {
   if (!API_KEY) return false;
   return req.get('x-api-key') === API_KEY;
 }
 
+if (!PG_URL) {
+  console.error('Missing PG_URL');
+  process.exit(1);
+}
+
+const pool = new Pool({
+  connectionString: PG_URL,
+  max: 10,
+});
+
 app.get('/healthz', async (_req, res) => {
-  res.json({ ok: true });
+  try {
+    const r = await pool.query('SELECT 1 as ok');
+    res.json({ ok: true, db: r.rows?.[0]?.ok ?? 1 });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'db_unreachable' });
+  }
 });
 
 app.get('/candles', async (req, res) => {
@@ -26,55 +46,37 @@ app.get('/candles', async (req, res) => {
 
   if (!ticker || !tf) return res.status(400).json({ ok: false, error: 'missing ticker/tf' });
 
-  // ClickHouse ts is DateTime64; we use ms epoch for API.
-  // Query returns newest-first; client can reverse if needed.
-  const where = [
-    `ticker = {ticker:String}`,
-    `tf = {tf:String}`,
-    beforeTs ? `ts < fromUnixTimestamp64Milli({before:UInt64})` : null,
-  ].filter(Boolean).join(' AND ');
+  const params = [ticker, tf];
+  let where = 'WHERE ticker = $1 AND tf = $2';
+  if (beforeTs && Number.isFinite(beforeTs)) {
+    params.push(new Date(beforeTs));
+    where += ` AND ts < $${params.length}`;
+  }
+  params.push(limit);
 
   const sql = `
-SELECT
-  toUnixTimestamp64Milli(ts) AS ts,
-  o,h,l,c,
-  v,
-  source
-FROM ${CLICKHOUSE_DB}.candles
-WHERE ${where}
+SELECT ticker, tf, (extract(epoch from ts) * 1000)::bigint AS ts, o,h,l,c,v,source
+FROM candles
+${where}
 ORDER BY ts DESC
-LIMIT {limit:UInt32}
-FORMAT JSON
+LIMIT $${params.length}
   `.trim();
 
-  const params = {
-    ticker,
-    tf,
-    limit,
-    ...(beforeTs ? { before: Math.floor(beforeTs) } : {}),
-  };
-
-  const url = `${CLICKHOUSE_URL}/?query=${encodeURIComponent(sql)}&param_ticker=${encodeURIComponent(params.ticker)}&param_tf=${encodeURIComponent(params.tf)}&param_limit=${encodeURIComponent(String(params.limit))}` + (beforeTs ? `&param_before=${encodeURIComponent(String(params.before))}` : '');
-
   try {
-    const r = await fetch(url);
-    if (!r.ok) {
-      const text = await r.text();
-      return res.status(502).json({ ok: false, error: 'clickhouse_error', status: r.status, body: text.slice(0, 500) });
-    }
-    const j = await r.json();
-    const rows = (j?.data || []).map((x) => ({
+    const r = await pool.query(sql, params);
+    const rows = (r.rows || []).map((x) => ({
       ts: Number(x.ts),
-      o: Number(x.o),
-      h: Number(x.h),
-      l: Number(x.l),
-      c: Number(x.c),
+      o: x.o == null ? null : Number(x.o),
+      h: x.h == null ? null : Number(x.h),
+      l: x.l == null ? null : Number(x.l),
+      c: x.c == null ? null : Number(x.c),
       v: x.v == null ? null : Number(x.v),
       source: x.source ?? null,
     }));
 
     res.json({ ok: true, ticker, tf, count: rows.length, rows });
   } catch (e) {
+    console.error(e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
 });
