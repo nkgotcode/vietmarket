@@ -36,6 +36,10 @@ from typing import Iterable
 import requests
 from vnstock import Vnstock
 
+# Suppress vnstock startup banners / upgrade nags.
+# vnstock prints directly to stdout; this env is honored by recent versions.
+os.environ.setdefault('VNSTOCK_SILENT', '1')
+
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser()
@@ -161,15 +165,16 @@ def fetch_candles_vci(symbol: str, interval: str, start: str, end: str | None, *
 
 
 def suppress_vnstock_info_logs() -> None:
-    """vnstock logs a lot of INFO lines; suppress to keep cron output readable."""
+    """vnstock is very chatty (banners + INFO logs); suppress to keep Nomad logs readable."""
     import logging
 
     # Root/basic config can still emit; reduce overall noise too.
-    logging.getLogger().setLevel(logging.WARNING)
+    logging.getLogger().setLevel(logging.ERROR)
 
     for name in [
         'vnstock',
         'vnstock.common.data',
+        'vnstock.common.data.data_explorer',
         'vnai',
         'vnai.beam.quota',
     ]:
