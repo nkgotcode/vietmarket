@@ -63,7 +63,7 @@ job "vietmarket-candles-timescale-backfill" {
   }
 
   group "standby_backfill_1d" {
-    count = 0
+    count = 12
 
     constraint {
       attribute = "${node.unique.name}"
