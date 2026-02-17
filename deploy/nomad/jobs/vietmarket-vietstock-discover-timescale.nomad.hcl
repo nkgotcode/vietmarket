@@ -25,9 +25,10 @@ job "vietmarket-vietstock-discover-timescale" {
       driver = "docker"
 
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "bash"
-        args    = ["-lc", "python3 packages/ingest/vietstock/vietstock_discover_timescale.py"]
+        image       = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        force_pull  = true
+        command     = "bash"
+        args        = ["-lc", "python3 packages/ingest/vietstock/vietstock_discover_timescale.py"]
       }
 
       env {
