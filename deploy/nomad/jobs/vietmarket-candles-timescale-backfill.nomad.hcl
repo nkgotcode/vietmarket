@@ -2,9 +2,9 @@ job "vietmarket-candles-timescale-backfill" {
   datacenters = ["dc1"]
   type        = "batch"
 
-  # Every 15 minutes (slow & steady).
+  # Every 5 minutes (faster catch-up).
   periodic {
-    crons             = ["*/15 * * * *"]
+    crons             = ["*/5 * * * *"]
     prohibit_overlap  = true
     time_zone         = "Asia/Ho_Chi_Minh"
   }
@@ -45,12 +45,12 @@ job "vietmarket-candles-timescale-backfill" {
         STALE_MINUTES = "30"
         LEASE_MS      = "300000"
 
-        BATCH_SIZE = "1"
+        BATCH_SIZE = "2"
         TFS        = "1d"
         START_1D   = "2000-01-01"
 
         # Full-history fetches can be slow; allow a longer budget.
-        RUN_TIMEOUT_SEC = "1800"
+        RUN_TIMEOUT_SEC = "3600"
 
         CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
       }
@@ -88,12 +88,12 @@ job "vietmarket-candles-timescale-backfill" {
         STALE_MINUTES = "30"
         LEASE_MS      = "300000"
 
-        BATCH_SIZE = "1"
+        BATCH_SIZE = "2"
         TFS        = "1d"
         START_1D   = "2000-01-01"
 
         # Full-history fetches can be slow; allow a longer budget.
-        RUN_TIMEOUT_SEC = "1800"
+        RUN_TIMEOUT_SEC = "3600"
 
         CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
       }
