@@ -14,7 +14,7 @@ job "vietmarket-candles-timescale-backfill-15m" {
   }
 
   group "primary_backfill_15m" {
-    count = 6
+    count = 1
 
     constraint {
       attribute = "${node.unique.name}"
@@ -56,14 +56,14 @@ job "vietmarket-candles-timescale-backfill-15m" {
       }
 
       resources {
-        cpu    = 400
-        memory = 768
+        cpu    = 300
+        memory = 512
       }
     }
   }
 
   group "standby_backfill_15m" {
-    count = 6
+    count = 8
 
     constraint {
       attribute = "${node.unique.name}"
@@ -105,8 +105,8 @@ job "vietmarket-candles-timescale-backfill-15m" {
       }
 
       resources {
-        cpu    = 400
-        memory = 768
+        cpu    = 300
+        memory = 512
       }
     }
   }
