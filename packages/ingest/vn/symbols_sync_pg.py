@@ -4,12 +4,13 @@
 Goal: build a full (active + inactive/delisted) universe with exchange + name.
 
 Primary source: VNDIRECT finfo API (public).
+Fallback source: local universe file (Simplize) when VNDIRECT is unreachable.
 
 Env:
 - PG_URL (required)
 
 Optional:
-- SYMBOLS_SOURCE=vndirect (default)
+- SYMBOLS_SOURCE=vndirect|file (default: vndirect)
 - VN_STOCK_FLOORS=HOSE,HNX,UPCOM (default)
 - PAGE_SIZE=500 (default)
 - MAX_PAGES=200 (default safety)
@@ -127,19 +128,42 @@ def upsert_symbols(rows: list[dict]) -> dict:
     return {'ok': True, 'upserts': len(payload), 'updated_at': ts}
 
 
+def load_file_universe(path: str) -> list[dict]:
+    import json
+    tickers = []
+    obj = json.load(open(path, 'r', encoding='utf-8'))
+    for t in (obj.get('tickers') or []):
+        s = str(t).strip().upper()
+        if s:
+            tickers.append(s)
+    # Map into the same row shape as vndirect
+    return [{'code': t, 'companyName': None, 'floor': None, 'status': None} for t in tickers]
+
+
 def main() -> int:
     source = os.environ.get('SYMBOLS_SOURCE', 'vndirect')
     floors = [x.strip().upper() for x in os.environ.get('VN_STOCK_FLOORS', 'HOSE,HNX,UPCOM').split(',') if x.strip()]
     page_size = int(os.environ.get('PAGE_SIZE', '500'))
     max_pages = int(os.environ.get('MAX_PAGES', '200'))
+    file_path = os.environ.get('SYMBOLS_FILE', 'data/simplize/universe.latest.json')
 
-    if source != 'vndirect':
+    rows: list[dict]
+    if source == 'vndirect':
+        try:
+            rows = vndirect_fetch_all(floors=floors, page_size=page_size, max_pages=max_pages)
+        except Exception as e:
+            # fallback to file if upstream is unreachable
+            rows = load_file_universe(file_path)
+            source = f"file(fallback:{type(e).__name__})"
+    elif source == 'file':
+        rows = load_file_universe(file_path)
+    else:
         raise RuntimeError(f'Unsupported SYMBOLS_SOURCE: {source}')
 
-    rows = vndirect_fetch_all(floors=floors, page_size=page_size, max_pages=max_pages)
     res = upsert_symbols(rows)
     res['source'] = source
     res['symbols'] = len(rows)
+    res['file'] = file_path if 'file' in str(source) else None
     print(res)
     return 0
 

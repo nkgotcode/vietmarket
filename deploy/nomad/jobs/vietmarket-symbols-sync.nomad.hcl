@@ -29,12 +29,15 @@ job "vietmarket-symbols-sync" {
         force_pull = true
         command    = "bash"
         args       = ["-lc", "python3 packages/ingest/vn/symbols_sync_pg.py"]
+        volumes    = ["/home/itsnk/vietmarket/data/simplize:/app/data/simplize:ro"]
       }
 
       env {
         PG_URL = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
 
+        # Prefer VNDIRECT; auto-fallback to file if unreachable
         SYMBOLS_SOURCE  = "vndirect"
+        SYMBOLS_FILE    = "/app/data/simplize/universe.latest.json"
         VN_STOCK_FLOORS = "HOSE,HNX,UPCOM"
         PAGE_SIZE       = "500"
         MAX_PAGES       = "200"
