@@ -38,6 +38,7 @@ BOOTSTRAP.md
 !/scripts/simplize_api_watchdog.mjs
 !/scripts/simplize_expand_market.mjs
 !/scripts/simplize_build_registry.mjs
+!/scripts/simplize_universe_refresh.mjs
 !/scripts/vietstock_registry_backfill.mjs
 # (moved to packages/ingest/vn/)
 

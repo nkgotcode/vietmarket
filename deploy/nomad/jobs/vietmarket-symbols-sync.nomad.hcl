@@ -3,6 +3,7 @@ job "vietmarket-symbols-sync" {
   type        = "batch"
 
   periodic {
+    # Runs after vietmarket-repo-refresh (minute 10)
     crons            = ["15 */6 * * *"]
     prohibit_overlap = true
     time_zone        = "Asia/Ho_Chi_Minh"
