@@ -80,20 +80,18 @@ CREATE TABLE IF NOT EXISTS articles (
   fetch_method   TEXT NULL,
   fetch_error    TEXT NULL,
 
-  -- archive pointers (optional)
-  html_path      TEXT NULL,
-  text_path      TEXT NULL,
+  -- Full text (Option 2: no sqlite archive; store text directly)
+  text           TEXT NULL,
 
   content_sha256 TEXT NULL,
   word_count     INTEGER NULL,
   lang           TEXT NULL,
 
-  -- Convex storage pointers (optional)
-  convex_text_file_id TEXT NULL,
-  convex_text_sha256  TEXT NULL,
-
   ingested_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Backward-compatible migration if an older articles table exists
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS text TEXT;
 
 -- Common query patterns:
 -- - newest articles
@@ -113,6 +111,10 @@ CREATE INDEX IF NOT EXISTS idx_articles_feed_url
 CREATE INDEX IF NOT EXISTS idx_articles_content_sha256
   ON articles (content_sha256);
 
+-- Full text search (simple English; we can add Vietnamese config later)
+CREATE INDEX IF NOT EXISTS idx_articles_text_fts
+  ON articles USING GIN (to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(text,'')));
+
 -------------------------------------------------------------------------------
 -- Article ↔ Symbol links
 -------------------------------------------------------------------------------
@@ -124,6 +126,43 @@ CREATE TABLE IF NOT EXISTS article_symbols (
   method      TEXT NULL,
   PRIMARY KEY (article_url, ticker)
 );
+
+-------------------------------------------------------------------------------
+-- RSS ingestion state (Option 2: no sqlite)
+-------------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS feeds (
+  feed_url TEXT PRIMARY KEY,
+  kind     TEXT NOT NULL DEFAULT 'rss',
+  title    TEXT NULL,
+  last_seen_published_at TIMESTAMPTZ NULL,
+  last_checked_at TIMESTAMPTZ NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS seeds (
+  seed_url   TEXT PRIMARY KEY,
+  feed_url   TEXT NULL REFERENCES feeds(feed_url) ON DELETE SET NULL,
+  channel_id INTEGER NULL,
+  kind       TEXT NOT NULL DEFAULT 'category',
+  note       TEXT NULL,
+  enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS crawl_state (
+  seed_url  TEXT PRIMARY KEY REFERENCES seeds(seed_url) ON DELETE CASCADE,
+  next_page INTEGER NOT NULL DEFAULT 1,
+  done      BOOLEAN NOT NULL DEFAULT FALSE,
+  no_new_pages BOOLEAN NOT NULL DEFAULT FALSE,
+  last_crawled_at TIMESTAMPTZ NULL,
+  oldest_seen_published_at TIMESTAMPTZ NULL,
+  last_error TEXT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_seeds_feed_url ON seeds(feed_url);
+CREATE INDEX IF NOT EXISTS idx_seeds_enabled ON seeds(enabled);
+CREATE INDEX IF NOT EXISTS idx_crawl_state_done ON crawl_state(done);
 
 CREATE INDEX IF NOT EXISTS idx_article_symbols_ticker
   ON article_symbols (ticker);
