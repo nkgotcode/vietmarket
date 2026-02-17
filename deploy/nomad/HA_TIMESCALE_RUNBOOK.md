@@ -109,6 +109,18 @@ psql "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=dis
 This setup currently uses **TCP checks** to Postgres. That means HAProxy will route to any node with an open 5432, even if it is a replica.
 
 In practice, Patroni should keep only the leader accepting writes, but for strict leader-only routing you can upgrade the HAProxy check to a SQL check (e.g. verify `pg_is_in_recovery() = false`) or restore Patroni-REST-based checks when 8008 is reachable locally.
+
+## Convex usage note
+
+If Convex free-tier limits are exceeded and deployments get disabled, you can run the app in **Timescale-only** mode for candles:
+
+- Stop the Nomad Convex candle jobs:
+  - `nomad job stop -purge vietmarket-candles-latest`
+  - `nomad job stop -purge vietmarket-candles-backfill`
+- Point the Next.js chart loader at History API via:
+  - `NEXT_PUBLIC_HISTORY_API_URL`
+  - `NEXT_PUBLIC_HISTORY_API_KEY`
+
 To make routing strictly leader-only, we have two options:
 1) Ensure Patroni REST `:8008` is reachable by HAProxy (local checks), and use Patroni role-based checks.
 2) Use a Postgres-aware health check (SQL) that validates `pg_is_in_recovery()` is false.

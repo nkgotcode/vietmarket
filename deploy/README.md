@@ -131,9 +131,9 @@ Key finding:
 
 > These are not fully implemented yet; this section is the checklist we will follow.
 
-1) Ingestion: dual-write candles
+1) Ingestion: dual-write candles (optional)
    - Always upsert full history to Timescale (idempotent `PRIMARY KEY (ticker,tf,ts)`)
-   - Only write bounded recent window to Convex
+   - If Convex is under heavy limits, skip Convex entirely and serve candles from History API
 
 2) History API: ensure paging matches UI
    - Endpoint already supports: `GET /candles?ticker&tf&beforeTs&limit`
