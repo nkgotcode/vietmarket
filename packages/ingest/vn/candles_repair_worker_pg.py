@@ -27,7 +27,13 @@ if VIETMARKET_ROOT not in sys.path:
     sys.path.insert(0, VIETMARKET_ROOT)
 
 from packages.ingest.db.pg import upsert_candles
-from packages.ingest.vn.candles_backfill import fetch_candles_vci, tf_to_interval, ms_to_date, ts_to_ms
+from packages.ingest.vn.candles_backfill import fetch_candles_vci, tf_to_interval, ts_to_ms
+
+
+def ms_to_date(ms: int) -> str:
+    # vnstock expects YYYY-MM-DD
+    dt = datetime.fromtimestamp(ms / 1000.0)
+    return dt.strftime('%Y-%m-%d')
 
 
 def pg_url() -> str:
