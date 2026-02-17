@@ -55,7 +55,9 @@ app.get('/candles', async (req, res) => {
   params.push(limit);
 
   const sql = `
-SELECT ticker, tf, (extract(epoch from ts) * 1000)::bigint AS ts, o,h,l,c,v,source
+SELECT ticker, tf,
+  ts AS ts,  -- ts is stored as unix ms (BIGINT)
+  o,h,l,c,v,source
 FROM candles
 ${where}
 ORDER BY ts DESC
