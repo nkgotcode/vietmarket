@@ -197,3 +197,40 @@ CREATE INDEX IF NOT EXISTS idx_fi_latest_ticker_metric
 
 CREATE INDEX IF NOT EXISTS idx_fi_latest_metric
   ON fi_latest (metric);
+
+-------------------------------------------------------------------------------
+-- Candles backfill progress + gap repair (Timescale-first ops)
+-------------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS candle_backfill_progress (
+  ticker TEXT NOT NULL,
+  tf     TEXT NOT NULL CHECK (tf IN ('1d','1h','15m')),
+  status TEXT NOT NULL DEFAULT 'active', -- active|done|error
+  note   TEXT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (ticker, tf)
+);
+
+CREATE INDEX IF NOT EXISTS idx_candle_backfill_progress_status
+  ON candle_backfill_progress (status);
+
+CREATE TABLE IF NOT EXISTS candle_repair_queue (
+  id BIGSERIAL PRIMARY KEY,
+  ticker TEXT NOT NULL,
+  tf     TEXT NOT NULL CHECK (tf IN ('1d','1h','15m')),
+  window_start_ts BIGINT NOT NULL,
+  window_end_ts   BIGINT NOT NULL,
+  reason TEXT NULL,
+  status TEXT NOT NULL DEFAULT 'queued', -- queued|running|done|error
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (ticker, tf, window_start_ts, window_end_ts)
+);
+
+CREATE INDEX IF NOT EXISTS idx_candle_repair_queue_status
+  ON candle_repair_queue (status, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_candle_repair_queue_ticker_tf
+  ON candle_repair_queue (ticker, tf);
