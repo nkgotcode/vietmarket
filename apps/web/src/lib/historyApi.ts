@@ -11,15 +11,14 @@ export type HistoryApiCandle = {
 };
 
 function getBaseUrl() {
-  const u = process.env.NEXT_PUBLIC_HISTORY_API_URL;
-  if (!u) throw new Error('Missing NEXT_PUBLIC_HISTORY_API_URL');
-  return u.replace(/\/$/, '');
+  // We proxy through Next.js Route Handler so the API key stays server-side.
+  // This route is protected by Clerk auth.
+  return '';
 }
 
 function getApiKey() {
-  const k = process.env.NEXT_PUBLIC_HISTORY_API_KEY;
-  if (!k) throw new Error('Missing NEXT_PUBLIC_HISTORY_API_KEY');
-  return k;
+  // API key is server-side only; browser never sees it.
+  return '';
 }
 
 export async function fetchCandles(params: {
@@ -30,17 +29,14 @@ export async function fetchCandles(params: {
 }): Promise<{ rows: HistoryApiCandle[] }>
 {
   const { ticker, tf, beforeTs, limit } = params;
-  const url = new URL(getBaseUrl() + '/candles');
+  const url = new URL('/api/history/candles', window.location.origin);
   url.searchParams.set('ticker', ticker);
   url.searchParams.set('tf', tf);
   if (beforeTs != null) url.searchParams.set('beforeTs', String(beforeTs));
   if (limit != null) url.searchParams.set('limit', String(limit));
 
   const r = await fetch(url.toString(), {
-    headers: {
-      'x-api-key': getApiKey(),
-    },
-    // This is market data; revalidate quickly.
+    // This is market data; always fetch fresh.
     cache: 'no-store',
   });
 

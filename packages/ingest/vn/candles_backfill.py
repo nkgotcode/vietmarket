@@ -127,6 +127,10 @@ def convex_url() -> str:
     return u.rstrip('/')
 
 
+def has_pg() -> bool:
+    return bool(os.environ.get('PG_URL'))
+
+
 def convex_mutation(path: str, args: dict) -> dict:
     url = convex_url() + '/api/mutation'
     r = requests.post(url, json={'path': path, 'args': args}, timeout=60)
@@ -233,22 +237,30 @@ def main(argv: list[str]) -> int:
 
             # upsert in chunks
             for batch in chunked(rows, args.chunk):
-                payload = {
-                    'ticker': ticker,
-                    'tf': tf,
-                    'candles': batch,
-                }
-                try:
-                    out = convex_mutation('candles:upsertMany', payload)
-                except Exception as e:
-                    print(f'ERROR convex upsert {ticker} {tf}: {e}', file=sys.stderr)
-                    break
+                if has_pg():
+                    try:
+                        from packages.ingest.db.pg import upsert_candles
+                        n = upsert_candles(ticker=ticker, tf=tf, rows=batch)
+                        print(f'  pg upserted: {n}')
+                    except Exception as e:
+                        print(f'ERROR pg upsert {ticker} {tf}: {e}', file=sys.stderr)
+                        break
+                else:
+                    payload = {
+                        'ticker': ticker,
+                        'tf': tf,
+                        'candles': batch,
+                    }
+                    try:
+                        out = convex_mutation('candles:upsertMany', payload)
+                    except Exception as e:
+                        print(f'ERROR convex upsert {ticker} {tf}: {e}', file=sys.stderr)
+                        break
 
-                # convex returns {status:'success', value:...} or similar; print minimal
-                if isinstance(out, dict) and 'value' in out:
-                    v = out.get('value')
-                    print(f'  upserted: {v}')
-                time.sleep(args.sleep)
+                    if isinstance(out, dict) and 'value' in out:
+                        v = out.get('value')
+                        print(f'  upserted: {v}')
+                    time.sleep(args.sleep)
 
     return 0
 

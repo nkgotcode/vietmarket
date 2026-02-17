@@ -9,8 +9,15 @@ if [ -f "$ROOT/.venv/bin/activate" ]; then
   source "$ROOT/.venv/bin/activate"
 fi
 
-CONVEX_URL="${CONVEX_URL:-${NEXT_PUBLIC_CONVEX_URL:-https://opulent-hummingbird-838.convex.cloud}}"
+# Convex is optional now (Timescale-only mode).
+# If CONVEX_URL is unset, we skip leases/progress reporting.
+CONVEX_URL="${CONVEX_URL:-${NEXT_PUBLIC_CONVEX_URL:-}}"
 export CONVEX_URL
+
+# Timescale HAProxy endpoint (required for Timescale-only mode)
+# Example:
+#   PG_URL=postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable
+export PG_URL="${PG_URL:-}"
 
 # Provide a stable root path for embedded python.
 export VIETMARKET_ROOT="$ROOT"
@@ -87,7 +94,7 @@ def convex_mutation(path: str, args: dict, timeout_s: int = 20) -> dict:
     r.raise_for_status()
     return r.json()
 
-# Try to claim lease for this shard BEFORE doing any work.
+# Try to claim lease for this shard BEFORE doing any work (Convex only).
 try:
     if os.environ.get('CONVEX_URL'):
         lease = convex_mutation('leases:tryClaim', {
@@ -103,8 +110,11 @@ try:
             print(json.dumps({'ok': True, 'skipped': 'not_owner', 'job': job_name, 'shard': shard_index, 'owner': val.get('ownerId') if isinstance(val, dict) else None}))
             sys.exit(0)
 except Exception as e:
+    # If Convex is enabled but lease calls fail, skip to avoid double-writers.
     print(json.dumps({'ok': True, 'skipped': 'lease_error', 'error': str(e)}))
     sys.exit(0)
+
+# If Convex is disabled (no leases), proceed; idempotency is handled by PG upsert.
 
 # load cursor
 cur = {'nextIndex': 0}
