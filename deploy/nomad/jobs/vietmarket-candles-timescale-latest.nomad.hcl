@@ -29,6 +29,8 @@ job "vietmarket-candles-timescale-latest" {
       config {
         image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
         force_pull = true
+        # Persist per-shard cursor across periodic runs
+        volumes    = ["/opt/nomad/data/vietmarket-cursors:/opt/nomad/data/vietmarket-cursors"]
       }
 
       env {
@@ -82,6 +84,7 @@ job "vietmarket-candles-timescale-latest" {
       config {
         image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
         force_pull = true
+        volumes    = ["/opt/nomad/data/vietmarket-cursors:/opt/nomad/data/vietmarket-cursors"]
       }
 
       env {
