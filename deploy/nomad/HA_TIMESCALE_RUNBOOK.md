@@ -91,6 +91,15 @@ Use HAProxy port 5433:
 
 ## Database schema
 
+### Candles performance tuning (current)
+The `candles` hypertable is tuned for high write volume + chart paging:
+- Chunk time interval: **7 days** (integer ms time dimension)
+- Compression: enabled, segment-by `(ticker, tf)` and order-by `ts`
+- Compression policy: compress chunks older than **14 days**
+
+A helper table `candles_latest` is maintained via trigger to support cross-sectional "latest" queries efficiently.
+
+
 Apply schema via HAProxy:
 
 ```bash

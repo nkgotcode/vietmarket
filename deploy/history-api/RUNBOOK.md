@@ -109,6 +109,19 @@ curl -sS https://<your-vultr-host>.<tailnet>.ts.net/healthz
 
 curl -sS -H "x-api-key: REPLACE_WITH_LONG_RANDOM" \
   "https://<your-vultr-host>.<tailnet>.ts.net/candles?ticker=VNINDEX&tf=1d&limit=5"
+
+## Query patterns (recommended)
+
+### Chart paging (per ticker)
+Use keyset pagination (fast with PK on `candles(ticker, tf, ts)`):
+- Newest page: `ORDER BY ts DESC LIMIT N`
+- Next page: `AND ts < <cursor_ts> ORDER BY ts DESC LIMIT N`
+
+### Latest snapshot (cross-sectional)
+Prefer reading from `candles_latest` (exact latest row per ticker+tf) instead of scanning `candles`.
+
+### Time-bounded cross-sectional scans
+Always bound by time and tf, e.g. `WHERE tf='15m' AND ts BETWEEN from_ms AND to_ms`.
 ```
 
 ## Common Issues
