@@ -27,7 +27,8 @@ job "vietmarket-candles-timescale-latest" {
       driver = "docker"
 
       config {
-        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        force_pull = true
       }
 
       env {
@@ -79,7 +80,8 @@ job "vietmarket-candles-timescale-latest" {
       driver = "docker"
 
       config {
-        image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        force_pull = true
       }
 
       env {
