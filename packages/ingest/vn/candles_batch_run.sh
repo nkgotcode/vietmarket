@@ -56,8 +56,27 @@ else:
     cursor_dir = Path(os.environ.get('CURSOR_DIR', str(root/'tmp')))
     cursor_file = cursor_dir / f"{job_name}_{shard_index}.json"
 
-obj = json.loads(universe_file.read_text('utf-8'))
-tickers_all = [t.strip().upper() for t in obj.get('tickers', []) if str(t).strip()]
+universe_mode = os.environ.get('UNIVERSE_MODE', 'file').strip().lower()
+
+def load_tickers_from_file():
+    obj = json.loads(universe_file.read_text('utf-8'))
+    return [t.strip().upper() for t in obj.get('tickers', []) if str(t).strip()]
+
+
+def load_tickers_from_pg():
+    import psycopg2
+    pg_url = os.environ.get('PG_URL', '')
+    if not pg_url:
+        raise RuntimeError('UNIVERSE_MODE=pg requires PG_URL')
+    where = os.environ.get('UNIVERSE_WHERE', "(active IS TRUE) OR (active IS NULL)")
+    sql = f"SELECT ticker FROM symbols WHERE {where} ORDER BY ticker"
+    with psycopg2.connect(pg_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            return [r[0].strip().upper() for r in cur.fetchall() if r and r[0]]
+
+
+tickers_all = load_tickers_from_pg() if universe_mode == 'pg' else load_tickers_from_file()
 
 # Filter universe down to VN equities only (avoid crypto/derivatives like XRPUSDT, X77, etc.)
 import re
