@@ -47,7 +47,7 @@ job "vietmarket-candles-timescale-latest" {
         BATCH_SIZE      = "4"
         TFS             = "1d,1h,15m"
         INCLUDE_INDICES = "0"
-        RUN_TIMEOUT_SEC = "300"
+        RUN_TIMEOUT_SEC = "600"
 
         START_1D  = "2026-01-01"
         START_1H  = "2026-02-01"
@@ -92,7 +92,7 @@ job "vietmarket-candles-timescale-latest" {
         BATCH_SIZE      = "4"
         TFS             = "1d,1h,15m"
         INCLUDE_INDICES = "0"
-        RUN_TIMEOUT_SEC = "300"
+        RUN_TIMEOUT_SEC = "600"
 
         START_1D  = "2026-01-01"
         START_1H  = "2026-02-01"
