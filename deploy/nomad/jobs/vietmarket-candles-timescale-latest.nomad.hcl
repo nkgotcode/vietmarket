@@ -37,6 +37,10 @@ job "vietmarket-candles-timescale-latest" {
         # Convex disabled in Timescale-only mode
         CONVEX_URL = ""
 
+        # Universe source: Timescale symbols table (full market coverage)
+        UNIVERSE_MODE  = "pg"
+        UNIVERSE_WHERE = "(exchange IN ('HOSE','HNX','UPCOM') OR exchange IS NULL) AND (active IS TRUE OR active IS NULL)"
+
         NODE_ID       = "optiplex"
         JOB_NAME      = "candles_latest"
         SHARD_COUNT   = "10"
@@ -81,6 +85,9 @@ job "vietmarket-candles-timescale-latest" {
       env {
         PG_URL = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
         CONVEX_URL = ""
+
+        UNIVERSE_MODE  = "pg"
+        UNIVERSE_WHERE = "(exchange IN ('HOSE','HNX','UPCOM') OR exchange IS NULL) AND (active IS TRUE OR active IS NULL)"
 
         NODE_ID       = "epyc"
         JOB_NAME      = "candles_latest"
