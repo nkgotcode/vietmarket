@@ -35,8 +35,8 @@ job "vietmarket-symbols-sync" {
       env {
         PG_URL = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
 
-        # Prefer VNDIRECT; auto-fallback to file if unreachable
-        SYMBOLS_SOURCE  = "vndirect"
+        # Use local Simplize universe file for now (VNDIRECT 443 is timing out from runners)
+        SYMBOLS_SOURCE  = "file"
         SYMBOLS_FILE    = "/app/data/simplize/universe.latest.json"
         VN_STOCK_FLOORS = "HOSE,HNX,UPCOM"
         PAGE_SIZE       = "500"
