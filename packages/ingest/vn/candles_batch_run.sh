@@ -214,5 +214,5 @@ try:
 except Exception:
     pass
 
-print(json.dumps({'ok': True, 'selected': sel, 'nextIndex': next_index, 'universeCount': n, 'cursorFile': str(cursor_file), 'job': job_name, 'shard': shard_index, 'nodeId': node_id}, indent=2))
+print(json.dumps({'ok': True, 'universeMode': universe_mode, 'universeWhere': os.environ.get('UNIVERSE_WHERE'), 'selected': sel, 'nextIndex': next_index, 'universeCount': n, 'cursorFile': str(cursor_file), 'job': job_name, 'shard': shard_index, 'nodeId': node_id}, indent=2))
 PY
