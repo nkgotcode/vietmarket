@@ -36,6 +36,16 @@ from typing import Iterable
 import requests
 from vnstock import Vnstock
 
+# Ensure repo root is importable when executed as a script (Nomad/Docker).
+# When running `python path/to/script.py`, Python does NOT automatically add CWD to sys.path.
+try:
+    from pathlib import Path
+    _root = Path(os.environ.get('VIETMARKET_ROOT', '')).resolve() if os.environ.get('VIETMARKET_ROOT') else None
+    if _root and str(_root) not in sys.path:
+        sys.path.insert(0, str(_root))
+except Exception:
+    pass
+
 # Suppress vnstock startup banners / upgrade nags.
 # vnstock prints directly to stdout; this env is honored by recent versions.
 os.environ.setdefault('VNSTOCK_SILENT', '1')
