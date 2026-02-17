@@ -131,6 +131,12 @@ CREATE TABLE IF NOT EXISTS article_symbols (
 -- RSS ingestion state (Option 2: no sqlite)
 -------------------------------------------------------------------------------
 
+CREATE TABLE IF NOT EXISTS control_kv (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS feeds (
   feed_url TEXT PRIMARY KEY,
   kind     TEXT NOT NULL DEFAULT 'rss',
