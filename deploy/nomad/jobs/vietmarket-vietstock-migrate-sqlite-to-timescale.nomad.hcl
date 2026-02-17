@@ -3,40 +3,37 @@ job "vietmarket-vietstock-migrate-sqlite-to-timescale" {
   type        = "batch"
 
   # One-shot migration job (dispatch manually).
-  # Copies Vietstock archive sqlite metadata + text files into Timescale.
-
-  constraint {
-    attribute = "${attr.kernel.name}"
-    value     = "linux"
-  }
+  # Runs on the Mac mini (where the sqlite archive + text files live) and writes into Timescale.
 
   group "migrate" {
     count = 1
 
-    # Run on Optiplex (has access to the archive path via tailnet/host filesystem assumptions).
+    # Target Mac mini witness node.
     constraint {
-      attribute = "${node.unique.name}"
-      value     = "optiplex"
+      attribute = "${meta.role}"
+      value     = "witness"
     }
 
     task "migrate" {
-      driver = "docker"
+      driver = "raw_exec"
 
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
         command = "bash"
-        args    = ["-lc", "python3 packages/ingest/vietstock/migrate_vietstock_sqlite_to_timescale.py"]
-
-        volumes = [
-          "/Users/lenamkhanh/vietstock-archive-data:/vietstock-archive-data:ro",
+        args = [
+          "-lc",
+          "set -euo pipefail; cd /Users/lenamkhanh/vietmarket; "
+          # ensure psycopg2 is available on the mac host python
+          "python3 -m pip -q install --user psycopg2-binary==2.9.9 >/dev/null 2>&1 || true; "
+          "PG_URL=\"$PG_URL\" VIETSTOCK_ARCHIVE_DB=\"$VIETSTOCK_ARCHIVE_DB\" TEXT_MAX_CHARS=\"$TEXT_MAX_CHARS\" "
+          "python3 packages/ingest/vietstock/migrate_vietstock_sqlite_to_timescale.py"
         ]
       }
 
       env {
         PG_URL = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
 
-        # Path inside the container (mounted read-only)
-        VIETSTOCK_ARCHIVE_DB = "/vietstock-archive-data/archive.sqlite"
+        # Archive sqlite lives on the Mac mini
+        VIETSTOCK_ARCHIVE_DB = "/Users/lenamkhanh/vietstock-archive-data/archive.sqlite"
 
         # Limit text size per article (safety)
         TEXT_MAX_CHARS = "200000"
