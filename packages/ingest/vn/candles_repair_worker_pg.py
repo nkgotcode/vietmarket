@@ -15,10 +15,16 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import time
 from datetime import datetime
 
 import psycopg2
+
+# Container runs with cwd=/app; make repo root importable.
+VIETMARKET_ROOT = os.environ.get('VIETMARKET_ROOT', '/app')
+if VIETMARKET_ROOT not in sys.path:
+    sys.path.insert(0, VIETMARKET_ROOT)
 
 from packages.ingest.db.pg import upsert_candles
 from packages.ingest.vn.candles_backfill import fetch_candles_vci, tf_to_interval, ms_to_date, ts_to_ms

@@ -35,6 +35,19 @@ from email.utils import parsedate_to_datetime
 
 import psycopg2
 
+
+def ensure_control_kv(cur):
+    # Defensive: if schema hasn't been applied yet, auto-create minimal table.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS control_kv (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """
+    )
+
 UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
@@ -123,6 +136,9 @@ def main() -> int:
     with psycopg2.connect(pg_url()) as conn:
         conn.autocommit = False
         with conn.cursor() as cur:
+            ensure_control_kv(cur)
+            conn.commit()
+
             # RSS stage: read feeds from DB
             cur.execute("SELECT feed_url FROM feeds ORDER BY feed_url")
             feeds = [r[0] for r in cur.fetchall()]
