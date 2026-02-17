@@ -21,11 +21,7 @@ job "vietmarket-vietstock-migrate-sqlite-to-timescale" {
         command = "bash"
         args = [
           "-lc",
-          "set -euo pipefail; cd /Users/lenamkhanh/vietmarket; "
-          # ensure psycopg2 is available on the mac host python
-          "python3 -m pip -q install --user psycopg2-binary==2.9.9 >/dev/null 2>&1 || true; "
-          "PG_URL=\"$PG_URL\" VIETSTOCK_ARCHIVE_DB=\"$VIETSTOCK_ARCHIVE_DB\" TEXT_MAX_CHARS=\"$TEXT_MAX_CHARS\" "
-          "python3 packages/ingest/vietstock/migrate_vietstock_sqlite_to_timescale.py"
+          "set -euo pipefail; cd /Users/lenamkhanh/vietmarket; python3 -m pip -q install --user psycopg2-binary==2.9.9 >/dev/null 2>&1 || true; PG_URL=\"$PG_URL\" VIETSTOCK_ARCHIVE_DB=\"$VIETSTOCK_ARCHIVE_DB\" TEXT_MAX_CHARS=\"$TEXT_MAX_CHARS\" python3 packages/ingest/vietstock/migrate_vietstock_sqlite_to_timescale.py"
         ]
       }
 
