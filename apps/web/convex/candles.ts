@@ -61,6 +61,8 @@ export const before = query({
   },
 });
 
+// NOTE: candles ingestion is moving to TimescaleDB + History API.
+// Convex candles are now considered optional/legacy; leave this for future cache use.
 // Idempotent upsert by (ticker, tf, ts)
 export const upsertMany = mutation({
   args: {

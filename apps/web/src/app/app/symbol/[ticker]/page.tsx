@@ -12,7 +12,7 @@ export default async function SymbolPage({ params }: { params: Promise<{ ticker:
         <div>
           <Link href="/app">← Back</Link>
           <h1 style={{ margin: '8px 0 0' }}>{t}</h1>
-          <div style={{ color: '#666' }}>KLineChart backed by Convex candles (full-history will be ingested).</div>
+          <div style={{ color: '#666' }}>KLineChart backed by History API (TimescaleDB HA).</div>
         </div>
         <UserButton />
       </div>

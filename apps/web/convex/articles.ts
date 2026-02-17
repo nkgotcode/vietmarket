@@ -3,7 +3,11 @@ import { v } from 'convex/values';
 import { api } from './_generated/api';
 
 function sha256Hex(input: Uint8Array): Promise<string> {
-  return crypto.subtle.digest('SHA-256', input).then((buf) => {
+  // crypto.subtle expects BufferSource; ensure ArrayBuffer, not a SharedArrayBuffer-like.
+  // Copy into a fresh ArrayBuffer (avoids SharedArrayBuffer typing issues in some TS/libdom combos)
+  const ab = new ArrayBuffer(input.byteLength);
+  new Uint8Array(ab).set(input);
+  return crypto.subtle.digest('SHA-256', ab).then((buf) => {
     const bytes = new Uint8Array(buf);
     return Array.from(bytes)
       .map((b) => b.toString(16).padStart(2, '0'))
