@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS candles (
 SELECT create_hypertable(
   'candles',
   'ts',
-  chunk_time_interval => 1000 * 60 * 60 * 24 * 30,
+  chunk_time_interval => (1000::bigint) * 60 * 60 * 24 * 30,
   if_not_exists => TRUE
 );
 
