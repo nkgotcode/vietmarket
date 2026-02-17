@@ -25,9 +25,10 @@ job "vietmarket-candles-gap-scan" {
       driver = "docker"
 
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "bash"
-        args    = ["-lc", "python3 packages/ingest/vn/candles_gap_scan_pg.py --tf 1d --lookback-days 60 --limit-tickers 500"]
+        image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        force_pull = true
+        command    = "bash"
+        args       = ["-lc", "python3 packages/ingest/vn/candles_gap_scan_pg.py --tf 1d --lookback-days 60 --limit-tickers 500"]
       }
 
       env {

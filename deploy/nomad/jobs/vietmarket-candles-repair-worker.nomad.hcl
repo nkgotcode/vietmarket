@@ -25,9 +25,10 @@ job "vietmarket-candles-repair-worker" {
       driver = "docker"
 
       config {
-        image   = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        command = "bash"
-        args    = ["-lc", "python3 packages/ingest/vn/candles_repair_worker_pg.py --limit 5"]
+        image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        force_pull = true
+        command    = "bash"
+        args       = ["-lc", "python3 packages/ingest/vn/candles_repair_worker_pg.py --limit 5"]
       }
 
       env {
