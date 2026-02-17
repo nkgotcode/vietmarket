@@ -129,13 +129,31 @@ def upsert_symbols(rows: list[dict]) -> dict:
 
 
 def load_file_universe(path: str) -> list[dict]:
+    """Load Simplize universe and filter to VN-market symbols.
+
+    The Simplize universe can contain non-VN or unsupported symbols (e.g. hyphenated indices like
+    NASDAQ-100) that the VN candle provider can't serve.
+
+    Policy:
+    - Keep VN indices: VNINDEX/HNXINDEX/UPCOMINDEX
+    - Keep alnum 3-4 chars (covers typical VN tickers, incl. digits like C32)
+    - Drop everything else
+    """
     import json
-    tickers = []
+    import re
+
+    VN_EQ_RE = re.compile(r'^[A-Z0-9]{3,4}$')
+    KEEP_EXTRA = {"VNINDEX", "HNXINDEX", "UPCOMINDEX"}
+
+    tickers: list[str] = []
     obj = json.load(open(path, 'r', encoding='utf-8'))
     for t in (obj.get('tickers') or []):
         s = str(t).strip().upper()
-        if s:
+        if not s:
+            continue
+        if s in KEEP_EXTRA or VN_EQ_RE.match(s):
             tickers.append(s)
+
     # Map into the same row shape as vndirect
     return [{'code': t, 'companyName': None, 'floor': None, 'status': None} for t in tickers]
 

@@ -32,6 +32,11 @@ job "vietmarket-candles-timescale-backfill" {
 
       config {
         image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+
+        # Persist per-shard cursors across periodic runs (otherwise it reprocesses the same tickers forever).
+        volumes = [
+          "/opt/nomad/data/vietmarket-cursors:/opt/nomad/data/vietmarket-cursors",
+        ]
       }
 
       env {
@@ -75,6 +80,11 @@ job "vietmarket-candles-timescale-backfill" {
 
       config {
         image = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+
+        # Persist per-shard cursors across periodic runs (otherwise it reprocesses the same tickers forever).
+        volumes = [
+          "/opt/nomad/data/vietmarket-cursors:/opt/nomad/data/vietmarket-cursors",
+        ]
       }
 
       env {

@@ -78,9 +78,11 @@ def load_tickers_from_pg():
 
 tickers_all = load_tickers_from_pg() if universe_mode == 'pg' else load_tickers_from_file()
 
-# Filter universe down to VN equities only (avoid crypto/derivatives like XRPUSDT, X77, etc.)
+# Filter universe down to VN equities only.
+# - Most VN tickers are 3 chars, sometimes include digits (e.g. C32).
+# - Exclude anything with dashes/slashes (e.g. NASDAQ-100) and long symbols (crypto/derivatives).
 import re
-VN_EQ_RE = re.compile(r'^[A-Z]{3,5}$')
+VN_EQ_RE = re.compile(r'^[A-Z0-9]{3,4}$')
 
 def is_vn_equity(sym: str) -> bool:
     if sym in ('VNINDEX', 'HNXINDEX', 'UPCOMINDEX'):
