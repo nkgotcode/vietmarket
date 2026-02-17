@@ -64,7 +64,7 @@ job "vietmarket-candles-timescale-latest" {
   }
 
   group "standby_latest" {
-    count = 10
+    count = 0
 
     constraint {
       attribute = "${node.unique.name}"
