@@ -28,16 +28,6 @@ job "vietmarket-fi-latest-sync-timescale" {
         image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
         force_pull = true
 
-        # Mount local Simplize SQLite DB into container
-        volumes = [
-          "/home/itsnk/vietmarket/data/simplize:/app/data/simplize:ro",
-        ]
-      }
-
-      config {
-        image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        force_pull = true
-
         entrypoint = ["python3", "/app/packages/ingest/simplize/fi_latest_sync_pg.py"]
 
         # Mount local Simplize SQLite DB into container
