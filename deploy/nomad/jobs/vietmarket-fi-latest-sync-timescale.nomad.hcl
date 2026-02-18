@@ -34,10 +34,22 @@ job "vietmarket-fi-latest-sync-timescale" {
         ]
       }
 
+      config {
+        image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
+        force_pull = true
+
+        entrypoint = ["python3", "/app/packages/ingest/simplize/fi_latest_sync_pg.py"]
+
+        # Mount local Simplize SQLite DB into container
+        volumes = [
+          "/home/itsnk/vietmarket/data/simplize:/app/data/simplize:ro",
+        ]
+      }
+
       env {
-        PG_URL     = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
+        PG_URL      = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
         SIMPLIZE_DB = "/app/data/simplize/simplize.db"
-        PERIOD     = "Q"
+        PERIOD      = "Q"
       }
 
       resources {
