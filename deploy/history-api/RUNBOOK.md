@@ -123,6 +123,15 @@ Prefer reading from `candles_latest` (exact latest row per ticker+tf) instead of
 ### Time-bounded cross-sectional scans
 Always bound by time and tf, e.g. `WHERE tf='15m' AND ts BETWEEN from_ms AND to_ms`.
 
+### Corporate actions / dividends
+- `GET /corporate-actions/latest?limit=50`
+- `GET /corporate-actions/latest?limit=50&beforeExDate=YYYY-MM-DD&beforeId=<id>`
+
+- `GET /corporate-actions/by-ticker?ticker=FPT&limit=50`
+- `GET /corporate-actions/by-ticker?ticker=FPT&limit=50&beforeExDate=YYYY-MM-DD&beforeId=<id>`
+
+These use keyset pagination ordered by `(ex_date desc, id desc)`.
+
 ### News endpoints + pagination
 - `GET /news/latest?limit=50`
 - `GET /news/latest?limit=50&beforePublishedAt=<ISO>&beforeUrl=<url>`
