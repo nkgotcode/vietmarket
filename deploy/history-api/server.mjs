@@ -173,6 +173,84 @@ LIMIT $2
   }
 });
 
+// News (Timescale-native; Option 2 strict: articles.text in Timescale)
+app.get('/news/latest', async (req, res) => {
+  if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
+
+  // Uses index on articles(published_at desc). Keep payload small.
+  const sql = `
+SELECT
+  a.url,
+  a.title,
+  a.source,
+  a.published_at,
+  left(coalesce(a.text,''), 220) as snippet,
+  coalesce(array_agg(s.ticker) filter (where s.ticker is not null), '{}'::text[]) as tickers
+FROM articles a
+LEFT JOIN article_symbols s ON s.article_url = a.url
+WHERE a.fetch_status = 'fetched'
+GROUP BY a.url, a.title, a.source, a.published_at, a.text
+ORDER BY a.published_at DESC NULLS LAST
+LIMIT $1
+  `.trim();
+
+  try {
+    const r = await pool.query(sql, [limit]);
+    const rows = (r.rows || []).map((x) => ({
+      url: String(x.url),
+      title: String(x.title),
+      source: String(x.source),
+      published_at: x.published_at ? String(x.published_at) : null,
+      snippet: x.snippet ? String(x.snippet) : null,
+      tickers: Array.isArray(x.tickers) ? x.tickers.map(String) : [],
+    }));
+    res.json({ ok: true, count: rows.length, rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.get('/news/by-ticker', async (req, res) => {
+  if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const ticker = String(req.query.ticker || '').trim().toUpperCase();
+  const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
+  if (!ticker) return res.status(400).json({ ok: false, error: 'missing ticker' });
+
+  const sql = `
+SELECT
+  a.url,
+  a.title,
+  a.source,
+  a.published_at,
+  left(coalesce(a.text,''), 220) as snippet
+FROM article_symbols s
+JOIN articles a ON a.url = s.article_url
+WHERE s.ticker = $1 AND a.fetch_status = 'fetched'
+ORDER BY a.published_at DESC NULLS LAST
+LIMIT $2
+  `.trim();
+
+  try {
+    const r = await pool.query(sql, [ticker, limit]);
+    const rows = (r.rows || []).map((x) => ({
+      url: String(x.url),
+      title: String(x.title),
+      source: String(x.source),
+      published_at: x.published_at ? String(x.published_at) : null,
+      snippet: x.snippet ? String(x.snippet) : null,
+      tickers: [ticker],
+    }));
+    res.json({ ok: true, ticker, count: rows.length, rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
 // Fundamentals (Simplize → fi_latest)
 app.get('/fundamentals/latest', async (req, res) => {
   if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });

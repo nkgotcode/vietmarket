@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
 import MarketOverviewClient from './MarketOverviewClient';
+import HeadlinesClient from './HeadlinesClient';
 
 export default function AppHome() {
   return (
@@ -23,6 +24,7 @@ export default function AppHome() {
       </ul>
 
       <MarketOverviewClient />
+      <HeadlinesClient />
     </main>
   );
 }
