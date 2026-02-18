@@ -375,13 +375,23 @@ def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> Lis
         headline = pick(it, ['Note', 'Title', 'Content', 'Description'])
         event_type = pick(it, ['Name', 'EventType', 'TypeName'])
 
+        ex_parsed = parse_ddmmyyyy(ex_date) if ex_date else None
+        record_parsed = parse_ddmmyyyy(record_date) if record_date else None
+        pay_parsed = parse_ddmmyyyy(pay_date) if pay_date else None
+
+        if not (ex_parsed and record_parsed and pay_parsed):
+            hx, hr, hp = _extract_dates_from_text(headline)
+            ex_parsed = ex_parsed or hx
+            record_parsed = record_parsed or hr
+            pay_parsed = pay_parsed or hp
+
         events.append(
             EventRow(
                 ticker=ticker,
                 exchange=exchange,
-                ex_date=parse_ddmmyyyy(ex_date) if ex_date else None,
-                record_date=parse_ddmmyyyy(record_date) if record_date else None,
-                pay_date=parse_ddmmyyyy(pay_date) if pay_date else None,
+                ex_date=ex_parsed,
+                record_date=record_parsed,
+                pay_date=pay_parsed,
                 headline=headline,
                 event_type=event_type,
                 source_url=source_url,
@@ -396,9 +406,9 @@ def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> Lis
 
 
 def _extract_dates_from_text(text: str):
-    """Best-effort extraction of (ex_date, record_date, pay_date) from a row text blob."""
+    """Best-effort extraction of (ex_date, record_date, pay_date) from free-form text."""
     date_pat = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
-    dates = date_pat.findall(text)
+    dates = date_pat.findall(text or "")
 
     def _label_date(pat: str):
         m = re.search(pat, text, re.I)
