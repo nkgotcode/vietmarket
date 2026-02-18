@@ -391,26 +391,46 @@ def parse_events_from_table_rows(rows: List[List[str]], source_url: str, univers
     dropped_universe = 0
     dropped_universe_samples: List[str] = []
 
+    ticker_pat = re.compile(r"\b(?=[A-Z0-9]{3,4}\b)(?=.*[A-Z])[A-Z0-9]{3,4}\b")
+    date_pat = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
+
     for cells in rows:
-        if len(cells) < 6:
+        if len(cells) < 2:
             dropped_short += 1
             continue
 
-        raw_ticker = str(cells[0] or '').strip().upper()
-        m = re.search(r"\b[A-Z0-9]{3,4}\b", raw_ticker)
-        ticker = m.group(0) if m else raw_ticker
-        if not universe_re.match(ticker):
+        # Vietstock table layout can shift; find ticker token robustly from row text,
+        # but require at least one alpha to avoid sequence numbers like 21/22.
+        joined = " | ".join([str(c or '').strip() for c in cells])
+        ticker = ''
+        for c in cells[:4]:
+            txt = str(c or '').strip().upper()
+            m = ticker_pat.search(txt)
+            if m:
+                ticker = m.group(0)
+                break
+
+        if (not ticker) or (not universe_re.match(ticker)):
             dropped_universe += 1
             if len(dropped_universe_samples) < 10:
-                dropped_universe_samples.append(raw_ticker)
+                dropped_universe_samples.append(joined[:120])
             continue
 
-        exchange = str(cells[1] or '').strip().upper() if len(cells) > 1 else ''
-        ex_date = parse_ddmmyyyy(cells[2]) if len(cells) > 2 else None
-        record_date = parse_ddmmyyyy(cells[3]) if len(cells) > 3 else None
-        pay_date = parse_ddmmyyyy(cells[4]) if len(cells) > 4 else None
-        headline = str(cells[5] or '').strip() if len(cells) > 5 else ''
-        event_type = str(cells[6] or '').strip() if len(cells) > 6 else ''
+        # Pull up to 3 dates from the row wherever they appear.
+        all_dates = date_pat.findall(joined)
+        ex_date = parse_ddmmyyyy(all_dates[0]) if len(all_dates) > 0 else None
+        record_date = parse_ddmmyyyy(all_dates[1]) if len(all_dates) > 1 else None
+        pay_date = parse_ddmmyyyy(all_dates[2]) if len(all_dates) > 2 else None
+
+        exchange = ''
+        for c in cells[:4]:
+            txt = str(c or '').strip().upper()
+            if txt in {'HOSE', 'HNX', 'UPCOM'}:
+                exchange = txt
+                break
+
+        headline = joined
+        event_type = ''
 
         events.append(
             EventRow(
