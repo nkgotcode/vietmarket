@@ -389,15 +389,20 @@ def parse_events_from_table_rows(rows: List[List[str]], source_url: str, univers
     events: List[EventRow] = []
     dropped_short = 0
     dropped_universe = 0
+    dropped_universe_samples: List[str] = []
 
     for cells in rows:
         if len(cells) < 6:
             dropped_short += 1
             continue
 
-        ticker = str(cells[0] or '').strip().upper()
+        raw_ticker = str(cells[0] or '').strip().upper()
+        m = re.search(r"\b[A-Z0-9]{3,4}\b", raw_ticker)
+        ticker = m.group(0) if m else raw_ticker
         if not universe_re.match(ticker):
             dropped_universe += 1
+            if len(dropped_universe_samples) < 10:
+                dropped_universe_samples.append(raw_ticker)
             continue
 
         exchange = str(cells[1] or '').strip().upper() if len(cells) > 1 else ''
@@ -429,6 +434,7 @@ def parse_events_from_table_rows(rows: List[List[str]], source_url: str, univers
                     "events_parsed": len(events),
                     "dropped_short": dropped_short,
                     "dropped_universe": dropped_universe,
+                    "dropped_universe_samples": dropped_universe_samples,
                     "source_url": source_url,
                 },
                 ensure_ascii=False,
