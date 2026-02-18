@@ -253,6 +253,24 @@ def post_events_json(*, session: requests.Session, token: str, event_type_id: in
         '__RequestVerificationToken': token,
     }
 
+    # Some deployments appear to expect DataTables-style paging keys.
+    payload_dt = {
+        'eventTypeID': str(event_type_id),
+        'channelID': str(channel_id),
+        'code': '',
+        'catID': '',
+        'fDate': from_date,
+        'tDate': to_date,
+        'page': str(page),
+        'pageSize': str(page_size),
+        'orderBy': 'Date1',
+        'orderDir': 'DESC',
+        'draw': str(page),
+        'start': str((max(page, 1) - 1) * page_size),
+        'length': str(page_size),
+        '__RequestVerificationToken': token,
+    }
+
     def _post(payload: dict, label: str):
         r = session.post(API_BASE, timeout=30, headers=base_headers, data=payload)
 
@@ -279,12 +297,13 @@ def post_events_json(*, session: requests.Session, token: str, event_type_id: in
         r.raise_for_status()
         return r
 
-    for idx, (label, payload) in enumerate((("primary", payload_primary), ("alt", payload_alt))):
+    variants = (("primary", payload_primary), ("alt", payload_alt), ("dt", payload_dt))
+    for idx, (label, payload) in enumerate(variants):
         r = _post(payload, label)
 
         # Empty body: retry alternate payload once.
         if (r.headers.get('content-length') == '0') or (len(r.content) == 0):
-            if idx == 0:
+            if idx < len(variants) - 1:
                 continue
             raise RuntimeError(
                 f"Empty response body from events endpoint after retries: status={r.status_code} headers={dict(r.headers)}"
@@ -300,8 +319,8 @@ def post_events_json(*, session: requests.Session, token: str, event_type_id: in
                 head = r.content[:512]
                 head_text = head.decode('utf-8', errors='replace')
                 header_dump = {k.lower(): v for k, v in r.headers.items()}
-                # Try alternate payload once if primary parse failed.
-                if idx == 0:
+                # Try next payload variant if parse failed.
+                if idx < len(variants) - 1:
                     continue
                 raise RuntimeError(
                     "Failed to parse events JSON: "
