@@ -16,7 +16,10 @@ This folder documents Nomad usage for VietMarket ingestion + HA DB.
 
 - `vietmarket-corporate-actions-ingest` (batch + periodic)
   - Scrapes VietstockFinance events calendar (`/lich-su-kien.htm`) and upserts into Timescale `corporate_actions`.
-  - Runs on optiplex.
+  - Runtime fallbacks: requests/session retries → `curl_cffi` → Playwright POST → Playwright table scrape.
+  - Reconciles unknown tickers into `symbols` before CA upsert to avoid FK-abort drops.
+  - Date extraction supports both JSON fields (`GDKHQDate`/`NDKCCDate`/`Time`) and table-text fallback.
+  - Runs on EPYC.
 
 ### Candles (periodic batch)
 - `jobs/vietmarket-candles-timescale-latest.nomad.hcl` — near-real-time refresh into Timescale (multi-tf windowed)
@@ -26,6 +29,16 @@ This folder documents Nomad usage for VietMarket ingestion + HA DB.
 
 Notes:
 - Backfill jobs rely on cursor persistence under `/opt/nomad/data/vietmarket-cursors` on each Linux client.
+
+### Derived market/fundamental surfaces (periodic batch)
+- `jobs/vietmarket-derived-market-sync.nomad.hcl` — consolidated 30m sync on EPYC
+  - Creates/syncs Timescale tables:
+    - `financials` (from `fi_latest`)
+    - `fundamentals` (latest-per-(ticker,metric))
+    - `technical_indicators` (latest close/sma20/sma50/ema20 by ticker/tf)
+    - `indicators` (normalized KV indicator rows)
+    - `market_stats` (candles/CA summary metrics)
+  - Script: `packages/ingest/vn/derived_market_sync_pg.py`
 
 ### News
 - `jobs/vietmarket-news.nomad.hcl` — Vietstock archive → Convex sync
@@ -58,6 +71,29 @@ Full intraday backfill can grow very large. Prefer efficient query patterns (key
 - Nomad Docker driver may block host mounts unless docker volumes are enabled in client config.
 - Stateful services require correct host dir permissions (`/opt/...`).
 - Convex free plan can disable deployments; ingestion/repair workers should handle `{status:"error"}` HTTP responses gracefully.
+
+## Quick verification
+
+```bash
+# Derived tables status
+psql "$PG_URL" -Atc "
+select 'financials',count(*) from financials
+union all select 'fundamentals',count(*) from fundamentals
+union all select 'technical_indicators',count(*) from technical_indicators
+union all select 'indicators',count(*) from indicators
+union all select 'market_stats',count(*) from market_stats;
+"
+
+# CA status
+psql "$PG_URL" -Atc "
+select count(*) as ca_rows,
+       count(*) filter (where ex_date is not null) as ex_nonnull,
+       count(*) filter (where record_date is not null) as record_nonnull,
+       count(*) filter (where pay_date is not null) as pay_nonnull,
+       max(ingested_at) as newest_ingested_at
+from corporate_actions;
+"
+```
 
 ## References
 
