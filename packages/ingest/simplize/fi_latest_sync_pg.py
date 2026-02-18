@@ -120,6 +120,16 @@ def main() -> int:
 
     with psycopg2.connect(pg_url()) as pg:
         with pg.cursor() as cur:
+            # Ensure symbols exist for FK (ticker -> symbols).
+            tickers = sorted({p["ticker"] for p in payload if p.get("ticker")})
+            if tickers:
+                psycopg2.extras.execute_values(
+                    cur,
+                    "INSERT INTO symbols (ticker) VALUES %s ON CONFLICT (ticker) DO NOTHING",
+                    [(t,) for t in tickers],
+                    page_size=1000,
+                )
+
             psycopg2.extras.execute_batch(cur, sql, payload, page_size=1000)
 
     print(
