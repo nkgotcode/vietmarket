@@ -384,6 +384,33 @@ def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> Lis
     return events
 
 
+def _extract_dates_from_text(text: str):
+    """Best-effort extraction of (ex_date, record_date, pay_date) from a row text blob."""
+    date_pat = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
+    dates = date_pat.findall(text)
+
+    def _label_date(pat: str):
+        m = re.search(pat, text, re.I)
+        if not m:
+            return None
+        return parse_ddmmyyyy(m.group(1))
+
+    ex_date = _label_date(r"(?:GDKHQ|Ex\s*-?date|Ngày\s*GDKHQ)\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})")
+    record_date = _label_date(r"(?:NDKCC|Record\s*-?date|Ngày\s*đăng\s*ký\s*cuối\s*cùng)\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})")
+    pay_date = _label_date(r"(?:Thanh\s*toán|Pay\s*-?date|Ngày\s*thanh\s*toán|Time)\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})")
+
+    # Fallback by order if labels are absent.
+    parsed = [parse_ddmmyyyy(d) for d in dates]
+    if ex_date is None and len(parsed) > 0:
+        ex_date = parsed[0]
+    if record_date is None and len(parsed) > 1:
+        record_date = parsed[1]
+    if pay_date is None and len(parsed) > 2:
+        pay_date = parsed[2]
+
+    return ex_date, record_date, pay_date
+
+
 def parse_events_from_table_rows(rows: List[List[str]], source_url: str, universe_re: re.Pattern) -> List[EventRow]:
     """Parse events from rendered HTML table rows (Playwright table-scrape fallback)."""
     events: List[EventRow] = []
@@ -392,7 +419,6 @@ def parse_events_from_table_rows(rows: List[List[str]], source_url: str, univers
     dropped_universe_samples: List[str] = []
 
     ticker_pat = re.compile(r"\b(?=[A-Z0-9]{3,4}\b)(?=.*[A-Z])[A-Z0-9]{3,4}\b")
-    date_pat = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
 
     for cells in rows:
         if len(cells) < 2:
@@ -416,11 +442,7 @@ def parse_events_from_table_rows(rows: List[List[str]], source_url: str, univers
                 dropped_universe_samples.append(joined[:120])
             continue
 
-        # Pull up to 3 dates from the row wherever they appear.
-        all_dates = date_pat.findall(joined)
-        ex_date = parse_ddmmyyyy(all_dates[0]) if len(all_dates) > 0 else None
-        record_date = parse_ddmmyyyy(all_dates[1]) if len(all_dates) > 1 else None
-        pay_date = parse_ddmmyyyy(all_dates[2]) if len(all_dates) > 2 else None
+        ex_date, record_date, pay_date = _extract_dates_from_text(joined)
 
         exchange = ''
         for c in cells[:4]:
@@ -754,9 +776,36 @@ ON CONFLICT (id) DO UPDATE SET
 
     with psycopg2.connect(pg_url()) as pg:
         with pg.cursor() as cur:
-            # Keep only tickers present in symbols to avoid FK violations
             cur.execute("select ticker from symbols")
             known = {r[0] for r in cur.fetchall()}
+
+            # Reconcile unknown tickers into symbols so CA rows are not dropped silently.
+            missing = sorted({p.get('ticker') for p in payload if p.get('ticker') and p.get('ticker') not in known})
+            if missing:
+                sym_rows = [
+                    {
+                        'ticker': t,
+                        'name': t,
+                        'exchange': next((p.get('exchange') for p in payload if p.get('ticker') == t and p.get('exchange')), None),
+                    }
+                    for t in missing
+                ]
+                psycopg2.extras.execute_batch(
+                    cur,
+                    """
+                    INSERT INTO symbols (ticker, name, exchange, active, updated_at)
+                    VALUES (%(ticker)s, %(name)s, %(exchange)s, true, (extract(epoch from now())*1000)::bigint)
+                    ON CONFLICT (ticker) DO UPDATE SET
+                      exchange = COALESCE(EXCLUDED.exchange, symbols.exchange),
+                      active = COALESCE(symbols.active, true),
+                      updated_at = (extract(epoch from now())*1000)::bigint
+                    """.strip(),
+                    sym_rows,
+                    page_size=200,
+                )
+                known.update(missing)
+            reconciled_symbols = len(missing)
+
             payload_filtered = [p for p in payload if p.get('ticker') in known]
             dropped_unknown = len(payload) - len(payload_filtered)
 
@@ -770,6 +819,7 @@ ON CONFLICT (id) DO UPDATE SET
                 "pages": max_pages,
                 "events_raw": len(payload),
                 "events_insertable": len(payload_filtered),
+                "reconciled_symbols": reconciled_symbols,
                 "dropped_unknown_ticker": dropped_unknown,
                 "sample": payload_filtered[:2],
             },
