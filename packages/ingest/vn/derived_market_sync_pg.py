@@ -232,7 +232,7 @@ SELECT * FROM (
   UNION ALL SELECT 'candles_eligible_total', cov.eligible_total, NULL::text, c.max_ts, now() FROM cov,c
   UNION ALL SELECT 'candles_eligible_with_candles', cov.eligible_with_candles, NULL::text, c.max_ts, now() FROM cov,c
   UNION ALL SELECT 'candles_eligible_missing', cov.eligible_missing, NULL::text, c.max_ts, now() FROM cov,c
-  UNION ALL SELECT 'candles_coverage_pct', CASE WHEN cov.eligible_total > 0 THEN round((cov.eligible_with_candles/cov.eligible_total)*100.0,2) ELSE NULL END, NULL::text, c.max_ts, now() FROM cov,c
+  UNION ALL SELECT 'candles_coverage_pct', CASE WHEN cov.eligible_total > 0 THEN ((cov.eligible_with_candles/cov.eligible_total)*100.0) ELSE NULL END, NULL::text, c.max_ts, now() FROM cov,c
 
   UNION ALL SELECT 'candles_1d_tickers', tf.tf_1d_tickers, NULL::text, c.max_ts, now() FROM tf,c
   UNION ALL SELECT 'candles_1h_tickers', tf.tf_1h_tickers, NULL::text, c.max_ts, now() FROM tf,c
