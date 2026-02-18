@@ -82,12 +82,24 @@ def main() -> int:
         ticker = (r["ticker"] or "").strip().upper()
         if not ticker:
             continue
+        pd = r["period_date"]
+        # Normalize Simplize periodDate into ISO date for Postgres DATE.
+        # Observed formats: YYYY-MM-DD, YYYY-MM, YYYY
+        if isinstance(pd, str):
+            s = pd.strip()
+            if len(s) == 7 and s[4] == '-':
+                pd = s + '-01'
+            elif len(s) == 4 and s.isdigit():
+                pd = s + '-01-01'
+            else:
+                pd = s
+
         payload.append(
             {
                 "ticker": ticker,
                 "period": (r["period"] or period).strip().upper(),
                 "statement": (r["statement"] or "").strip().lower(),
-                "period_date": r["period_date"],
+                "period_date": pd,
                 "metric": (r["metric"] or "").strip(),
                 "value": r["value"],
                 "fetched_at": r["fetched_at"],
