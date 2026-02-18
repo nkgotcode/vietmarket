@@ -3,7 +3,8 @@ import { auth } from '@clerk/nextjs/server';
 
 export async function GET(req: Request) {
   const { userId } = await auth();
-  if (!userId) {
+  const bypass = (process.env.E2E_BYPASS_AUTH === '1') && (process.env.E2E_BYPASS_TOKEN) && (req.headers.get('x-e2e-bypass') === process.env.E2E_BYPASS_TOKEN);
+  if (!userId && !bypass) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
 

@@ -9,6 +9,15 @@ const isPublicRoute = createRouteMatcher([
 
 export default clerkMiddleware(async (auth, req) => {
   if (isPublicRoute(req)) return;
+
+  // Playwright E2E bypass (test-only). Requires env + header.
+  if (process.env.E2E_BYPASS_AUTH === '1') {
+    const tok = process.env.E2E_BYPASS_TOKEN;
+    if (tok && req.headers.get('x-e2e-bypass') === tok) {
+      return;
+    }
+  }
+
   await auth.protect();
 });
 

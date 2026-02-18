@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { UserButton } from '@clerk/nextjs';
 import ChartClient from './ChartClient';
 import SymbolHeadlinesClient from './SymbolHeadlinesClient';
+import AuthWidget from '../../AuthWidget';
 
 export default async function SymbolPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
@@ -15,7 +15,7 @@ export default async function SymbolPage({ params }: { params: Promise<{ ticker:
           <h1 style={{ margin: '8px 0 0' }}>{t}</h1>
           <div style={{ color: '#666' }}>KLineChart backed by History API (TimescaleDB HA).</div>
         </div>
-        <UserButton />
+        <AuthWidget />
       </div>
 
       <div style={{ marginTop: 14 }}>
