@@ -220,7 +220,17 @@ def post_events_json(*, token: str, event_type_id: int, channel_id: int, page: i
         data=payload,
     )
     r.raise_for_status()
-    return r.json()
+
+    # Vietstock sometimes returns JSON with a UTF-8 BOM prefix.
+    # requests' r.json() will fail with "Unexpected UTF-8 BOM".
+    try:
+        return r.json()
+    except Exception:
+        try:
+            return json.loads(r.content.decode('utf-8-sig'))
+        except Exception as e:
+            snippet = (r.text or '')[:500]
+            raise RuntimeError(f"Failed to parse events JSON: status={r.status_code} content_type={r.headers.get('content-type','')} snippet={snippet!r}") from e
 
 
 def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> List[EventRow]:
