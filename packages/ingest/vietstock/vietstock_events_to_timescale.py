@@ -37,6 +37,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import List, Optional
 
+from urllib.parse import urlencode
+
 import psycopg2
 import psycopg2.extras
 import requests
@@ -46,6 +48,12 @@ try:
     from curl_cffi import requests as cf_requests  # type: ignore
 except Exception:  # pragma: no cover
     cf_requests = None
+
+try:
+    # Optional: true browser-context fallback.
+    from playwright.sync_api import sync_playwright  # type: ignore
+except Exception:  # pragma: no cover
+    sync_playwright = None
 
 UI_BASE = "https://finance.vietstock.vn/lich-su-kien.htm"
 API_BASE = "https://finance.vietstock.vn/data/eventstypedata"
@@ -427,6 +435,77 @@ def post_events_json_curl_cffi(*, event_type_id: int, channel_id: int, page: int
         return json.loads(r.content.decode('utf-8-sig'))
 
 
+def post_events_json_playwright(*, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str):
+    """Fallback using real browser context via Playwright."""
+    if sync_playwright is None:
+        raise RuntimeError("playwright not available")
+
+    form = {
+        'eventTypeID': str(event_type_id),
+        'channelID': str(channel_id),
+        'code': '',
+        'catID': '',
+        'fDate': from_date,
+        'tDate': to_date,
+        'page': str(page),
+        'pageSize': str(page_size),
+        'orderBy': 'Date1',
+        'orderDir': 'DESC',
+    }
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
+        context = browser.new_context(locale='vi-VN')
+        page_obj = context.new_page()
+        page_obj.goto(f"{UI_BASE}?page=1", wait_until='domcontentloaded', timeout=45000)
+
+        token = page_obj.eval_on_selector('input[name="__RequestVerificationToken"]', 'el => el.value')
+        if not token:
+            browser.close()
+            raise RuntimeError('playwright could not extract __RequestVerificationToken')
+
+        payload = dict(form)
+        payload['__RequestVerificationToken'] = token
+        body = urlencode(payload)
+
+        result = page_obj.evaluate(
+            """async ({ body, token }) => {
+              const r = await fetch('/data/eventstypedata', {
+                method: 'POST',
+                headers: {
+                  'accept': 'application/json, text/javascript, */*; q=0.01',
+                  'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                  'x-requested-with': 'XMLHttpRequest',
+                  'requestverificationtoken': token,
+                },
+                body,
+                credentials: 'include',
+              });
+              const text = await r.text();
+              return {
+                ok: r.ok,
+                status: r.status,
+                contentType: r.headers.get('content-type') || '',
+                contentLength: r.headers.get('content-length') || '',
+                text,
+              };
+            }""",
+            {"body": body, "token": token},
+        )
+        browser.close()
+
+    txt = (result or {}).get('text') or ''
+    if not txt.strip():
+        raise RuntimeError(
+            f"playwright fallback still returned empty body: status={(result or {}).get('status')} content_type={(result or {}).get('contentType')}"
+        )
+
+    try:
+        return json.loads(txt)
+    except Exception:
+        return json.loads(txt.encode('utf-8').decode('utf-8-sig'))
+
+
 def fetch_page_with_fresh_session(*, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str, retries: int):
     """Fetch one API page by re-bootstrapping session/token on every attempt."""
     last_err = None
@@ -451,7 +530,21 @@ def fetch_page_with_fresh_session(*, event_type_id: int, channel_id: int, page: 
 
     # Last-resort fallback for anti-bot/network fingerprint edge-cases.
     if os.environ.get('ENABLE_CURL_CFFI_FALLBACK', '1') == '1':
-        return post_events_json_curl_cffi(
+        try:
+            return post_events_json_curl_cffi(
+                event_type_id=event_type_id,
+                channel_id=channel_id,
+                page=page,
+                page_size=page_size,
+                from_date=from_date,
+                to_date=to_date,
+            )
+        except Exception as e:
+            last_err = e
+
+    # Ultimate fallback: full browser context.
+    if os.environ.get('ENABLE_PLAYWRIGHT_FALLBACK', '1') == '1':
+        return post_events_json_playwright(
             event_type_id=event_type_id,
             channel_id=channel_id,
             page=page,
