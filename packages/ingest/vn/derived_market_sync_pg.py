@@ -181,7 +181,7 @@ WITH c AS (
   SELECT count(*)::double precision AS total_rows,
          count(distinct ticker)::double precision AS total_tickers,
          max(ts) AS max_ts,
-         max(ingested_at)::text AS max_ingested_at
+         max(ingested_at) AS max_ingested_at
   FROM candles
 ), ca AS (
   SELECT count(*)::double precision AS ca_rows,
@@ -189,13 +189,58 @@ WITH c AS (
          count(*) FILTER (WHERE record_date IS NOT NULL)::double precision AS ca_record,
          count(*) FILTER (WHERE pay_date IS NOT NULL)::double precision AS ca_pay
   FROM corporate_actions
+), eligible AS (
+  SELECT ticker
+  FROM symbols
+  WHERE coalesce(active,true)=true
+    AND ticker ~ '^[A-Z0-9]{3,4}$'
+    AND ticker NOT IN ('VNINDEX','HNXINDEX','UPCOMINDEX')
+), cov AS (
+  SELECT
+    (SELECT count(*)::double precision FROM eligible) AS eligible_total,
+    (SELECT count(distinct c.ticker)::double precision FROM candles c JOIN eligible e ON e.ticker=c.ticker) AS eligible_with_candles,
+    (SELECT count(*)::double precision FROM eligible e LEFT JOIN (SELECT distinct ticker FROM candles) c ON c.ticker=e.ticker WHERE c.ticker IS NULL) AS eligible_missing
+), tf AS (
+  SELECT
+    count(distinct ticker) FILTER (WHERE tf='1d')::double precision AS tf_1d_tickers,
+    count(distinct ticker) FILTER (WHERE tf='1h')::double precision AS tf_1h_tickers,
+    count(distinct ticker) FILTER (WHERE tf='15m')::double precision AS tf_15m_tickers,
+    count(*) FILTER (WHERE tf='1d')::double precision AS tf_1d_rows,
+    count(*) FILTER (WHERE tf='1h')::double precision AS tf_1h_rows,
+    count(*) FILTER (WHERE tf='15m')::double precision AS tf_15m_rows
+  FROM candles
+), diag AS (
+  SELECT
+    CASE
+      WHEN c.max_ts IS NULL THEN 'unknown'
+      WHEN (extract(epoch from now())*1000 - c.max_ts) <= 7200000 THEN 'fresh'
+      WHEN c.max_ingested_at >= (now() - interval '30 minutes') THEN 'market_closed_or_source_limited'
+      ELSE 'pipeline_stalled'
+    END AS frontier_status,
+    GREATEST(0, (extract(epoch from now())*1000 - c.max_ts))::double precision AS frontier_lag_ms
+  FROM c
 )
 INSERT INTO market_stats(metric, value_numeric, value_text, asof_ts, updated_at)
 SELECT * FROM (
   SELECT 'candles_total_rows', c.total_rows, NULL::text, c.max_ts, now() FROM c
   UNION ALL SELECT 'candles_total_tickers', c.total_tickers, NULL::text, c.max_ts, now() FROM c
   UNION ALL SELECT 'candles_max_ts', c.max_ts::double precision, NULL::text, c.max_ts, now() FROM c
-  UNION ALL SELECT 'candles_max_ingested_at', NULL::double precision, c.max_ingested_at, c.max_ts, now() FROM c
+  UNION ALL SELECT 'candles_max_ingested_at', NULL::double precision, c.max_ingested_at::text, c.max_ts, now() FROM c
+  UNION ALL SELECT 'candles_frontier_status', NULL::double precision, d.frontier_status, c.max_ts, now() FROM c, diag d
+  UNION ALL SELECT 'candles_frontier_lag_ms', d.frontier_lag_ms, NULL::text, c.max_ts, now() FROM c, diag d
+
+  UNION ALL SELECT 'candles_eligible_total', cov.eligible_total, NULL::text, c.max_ts, now() FROM cov,c
+  UNION ALL SELECT 'candles_eligible_with_candles', cov.eligible_with_candles, NULL::text, c.max_ts, now() FROM cov,c
+  UNION ALL SELECT 'candles_eligible_missing', cov.eligible_missing, NULL::text, c.max_ts, now() FROM cov,c
+  UNION ALL SELECT 'candles_coverage_pct', CASE WHEN cov.eligible_total > 0 THEN round((cov.eligible_with_candles/cov.eligible_total)*100.0,2) ELSE NULL END, NULL::text, c.max_ts, now() FROM cov,c
+
+  UNION ALL SELECT 'candles_1d_tickers', tf.tf_1d_tickers, NULL::text, c.max_ts, now() FROM tf,c
+  UNION ALL SELECT 'candles_1h_tickers', tf.tf_1h_tickers, NULL::text, c.max_ts, now() FROM tf,c
+  UNION ALL SELECT 'candles_15m_tickers', tf.tf_15m_tickers, NULL::text, c.max_ts, now() FROM tf,c
+  UNION ALL SELECT 'candles_1d_rows', tf.tf_1d_rows, NULL::text, c.max_ts, now() FROM tf,c
+  UNION ALL SELECT 'candles_1h_rows', tf.tf_1h_rows, NULL::text, c.max_ts, now() FROM tf,c
+  UNION ALL SELECT 'candles_15m_rows', tf.tf_15m_rows, NULL::text, c.max_ts, now() FROM tf,c
+
   UNION ALL SELECT 'ca_total_rows', ca.ca_rows, NULL::text, (SELECT max_ts FROM c), now() FROM ca
   UNION ALL SELECT 'ca_ex_nonnull', ca.ca_ex, NULL::text, (SELECT max_ts FROM c), now() FROM ca
   UNION ALL SELECT 'ca_record_nonnull', ca.ca_record, NULL::text, (SELECT max_ts FROM c), now() FROM ca
