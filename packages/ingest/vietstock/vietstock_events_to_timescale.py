@@ -356,30 +356,41 @@ def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> Lis
     rows = obj[0] if isinstance(obj, list) and len(obj) > 0 else []
     events: List[EventRow] = []
 
+    def pick(it: dict, keys: List[str]) -> str:
+        for k in keys:
+            v = it.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
+
     for it in rows or []:
-        ticker = str(it.get('Code') or '').strip().upper()
+        ticker = pick(it, ['Code', 'Ticker', 'Symbol']).upper()
         if not universe_re.match(ticker):
             continue
 
-        exchange = str(it.get('Exchange') or '').strip().upper()
-        ex_date = it.get('GDKHQDate')
-        record_date = it.get('NDKCCDate')
-        pay_date = it.get('Time')
-        headline = str(it.get('Note') or '').strip()
-        event_type = str(it.get('Name') or '').strip()
+        exchange = pick(it, ['Exchange', 'Market']).upper()
+        ex_date = pick(it, ['GDKHQDate', 'ExDate', 'Date1', 'NgayGDKHQ'])
+        record_date = pick(it, ['NDKCCDate', 'RecordDate', 'Date2', 'NgayDKCC'])
+        pay_date = pick(it, ['Time', 'PayDate', 'Date3', 'NgayThanhToan'])
+        headline = pick(it, ['Note', 'Title', 'Content', 'Description'])
+        event_type = pick(it, ['Name', 'EventType', 'TypeName'])
 
         events.append(
             EventRow(
                 ticker=ticker,
                 exchange=exchange,
-                ex_date=parse_ddmmyyyy(ex_date) if isinstance(ex_date, str) else None,
-                record_date=parse_ddmmyyyy(record_date) if isinstance(record_date, str) else None,
-                pay_date=parse_ddmmyyyy(pay_date) if isinstance(pay_date, str) else None,
+                ex_date=parse_ddmmyyyy(ex_date) if ex_date else None,
+                record_date=parse_ddmmyyyy(record_date) if record_date else None,
+                pay_date=parse_ddmmyyyy(pay_date) if pay_date else None,
                 headline=headline,
                 event_type=event_type,
                 source_url=source_url,
             )
         )
+
+    if os.environ.get('DEBUG_VIETSTOCK', '1') == '1' and rows:
+        first = rows[0] if isinstance(rows[0], dict) else {}
+        print(json.dumps({"debug": "vietstock_json_keys", "sample_keys": list(first.keys())[:40]}, ensure_ascii=False))
 
     return events
 
