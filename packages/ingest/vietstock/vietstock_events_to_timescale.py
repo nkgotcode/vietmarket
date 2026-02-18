@@ -387,12 +387,17 @@ def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> Lis
 def parse_events_from_table_rows(rows: List[List[str]], source_url: str, universe_re: re.Pattern) -> List[EventRow]:
     """Parse events from rendered HTML table rows (Playwright table-scrape fallback)."""
     events: List[EventRow] = []
+    dropped_short = 0
+    dropped_universe = 0
+
     for cells in rows:
         if len(cells) < 6:
+            dropped_short += 1
             continue
 
         ticker = str(cells[0] or '').strip().upper()
         if not universe_re.match(ticker):
+            dropped_universe += 1
             continue
 
         exchange = str(cells[1] or '').strip().upper() if len(cells) > 1 else ''
@@ -412,6 +417,21 @@ def parse_events_from_table_rows(rows: List[List[str]], source_url: str, univers
                 headline=headline,
                 event_type=event_type,
                 source_url=source_url,
+            )
+        )
+
+    if os.environ.get('DEBUG_VIETSTOCK', '1') == '1':
+        print(
+            json.dumps(
+                {
+                    "debug": "vietstock_table_parse",
+                    "rows_input": len(rows),
+                    "events_parsed": len(events),
+                    "dropped_short": dropped_short,
+                    "dropped_universe": dropped_universe,
+                    "source_url": source_url,
+                },
+                ensure_ascii=False,
             )
         )
 
@@ -547,17 +567,39 @@ def fetch_events_table_playwright(*, event_type_id: int, channel_id: int, page: 
         raise RuntimeError("playwright not available for table scrape")
 
     chromium_path = os.environ.get('CHROMIUM_PATH', '/usr/bin/chromium')
+    target = f"{UI_BASE}?page={page}&tab={event_type_id}&group={channel_id}"
+
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=chromium_path, headless=True, args=['--no-sandbox'])
         context = browser.new_context(locale='vi-VN')
         page_obj = context.new_page()
-        target = f"{UI_BASE}?page={page}&tab={event_type_id}&group={channel_id}"
         page_obj.goto(target, wait_until='domcontentloaded', timeout=45000)
-        page_obj.wait_for_selector('#event-content tr', timeout=20000)
+
+        try:
+            page_obj.wait_for_selector('#event-content tr', timeout=20000)
+        except Exception:
+            pass
+
+        table_html = page_obj.eval_on_selector('#event-content', 'el => el ? el.innerHTML : ""')
         html = page_obj.content()
         browser.close()
 
     rows = extract_table_rows(html)
+
+    if os.environ.get('DEBUG_VIETSTOCK', '1') == '1':
+        print(
+            json.dumps(
+                {
+                    "debug": "vietstock_table_scrape",
+                    "target": target,
+                    "table_html_len": len(table_html or ''),
+                    "page_html_len": len(html or ''),
+                    "rows_extracted": len(rows),
+                },
+                ensure_ascii=False,
+            )
+        )
+
     return parse_events_from_table_rows(rows, source_url, universe_re)
 
 
@@ -642,7 +684,19 @@ def main() -> int:
                 retries=page_retries,
             )
             all_events.extend(parse_events_from_json(obj, source_url, universe_re))
-        except Exception:
+        except Exception as e:
+            if os.environ.get('DEBUG_VIETSTOCK', '1') == '1':
+                print(
+                    json.dumps(
+                        {
+                            "debug": "vietstock_api_fallback_to_table",
+                            "page": page,
+                            "error": str(e),
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+
             if os.environ.get('ENABLE_TABLE_SCRAPE_FALLBACK', '1') != '1':
                 raise
             all_events.extend(
