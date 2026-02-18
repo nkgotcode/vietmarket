@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # vnstock pulls pandas/numpy; keep it explicit for reproducibility.
 RUN pip install --no-cache-dir \
     requests==2.32.3 \
+    curl_cffi==0.7.4 \
     vnstock==3.2.6 \
     pandas==2.2.2 \
     numpy==2.0.1 \

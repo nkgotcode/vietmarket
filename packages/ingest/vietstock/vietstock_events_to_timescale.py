@@ -41,6 +41,12 @@ import psycopg2
 import psycopg2.extras
 import requests
 
+try:
+    # Optional: browser-TLS impersonation fallback for anti-bot guarded endpoints.
+    from curl_cffi import requests as cf_requests  # type: ignore
+except Exception:  # pragma: no cover
+    cf_requests = None
+
 UI_BASE = "https://finance.vietstock.vn/lich-su-kien.htm"
 API_BASE = "https://finance.vietstock.vn/data/eventstypedata"
 
@@ -370,13 +376,59 @@ def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> Lis
     return events
 
 
-def fetch_page_with_fresh_session(*, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str, retries: int):
-    """Fetch one API page by re-bootstrapping session/token on every attempt.
+def post_events_json_curl_cffi(*, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str):
+    """Fallback using curl_cffi browser impersonation (if installed)."""
+    if cf_requests is None:
+        raise RuntimeError("curl_cffi not available")
 
-    Vietstock occasionally returns HTTP 200 with empty body when the
-    request/session tuple is considered invalid. Recreating the full
-    page+token+POST flow improves reliability in headless environments.
-    """
+    s = cf_requests.Session(impersonate="chrome124")
+    ui = s.get(
+        f"{UI_BASE}?page=1",
+        timeout=30,
+        headers={
+            "accept": "text/html,application/xhtml+xml",
+            "accept-language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+        },
+    )
+    ui.raise_for_status()
+    token = extract_token(ui.text)
+
+    headers = {
+        'accept': 'application/json, text/javascript, */*; q=0.01',
+        'accept-language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+        'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'x-requested-with': 'XMLHttpRequest',
+        'origin': 'https://finance.vietstock.vn',
+        'referer': f"{UI_BASE}?page=1",
+        'requestverificationtoken': token,
+    }
+    payload = {
+        'eventTypeID': str(event_type_id),
+        'channelID': str(channel_id),
+        'code': '',
+        'catID': '',
+        'fDate': from_date,
+        'tDate': to_date,
+        'page': str(page),
+        'pageSize': str(page_size),
+        'orderBy': 'Date1',
+        'orderDir': 'DESC',
+        '__RequestVerificationToken': token,
+    }
+
+    r = s.post(API_BASE, timeout=30, headers=headers, data=payload)
+    r.raise_for_status()
+    if (r.headers.get('content-length') == '0') or (len(r.content) == 0):
+        raise RuntimeError("curl_cffi fallback still returned empty body")
+
+    try:
+        return r.json()
+    except Exception:
+        return json.loads(r.content.decode('utf-8-sig'))
+
+
+def fetch_page_with_fresh_session(*, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str, retries: int):
+    """Fetch one API page by re-bootstrapping session/token on every attempt."""
     last_err = None
     for _ in range(max(1, retries)):
         session = requests.Session()
@@ -396,6 +448,17 @@ def fetch_page_with_fresh_session(*, event_type_id: int, channel_id: int, page: 
         except Exception as e:
             last_err = e
             continue
+
+    # Last-resort fallback for anti-bot/network fingerprint edge-cases.
+    if os.environ.get('ENABLE_CURL_CFFI_FALLBACK', '1') == '1':
+        return post_events_json_curl_cffi(
+            event_type_id=event_type_id,
+            channel_id=channel_id,
+            page=page,
+            page_size=page_size,
+            from_date=from_date,
+            to_date=to_date,
+        )
 
     if last_err:
         raise last_err
