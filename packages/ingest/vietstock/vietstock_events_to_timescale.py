@@ -152,9 +152,14 @@ class EventRow:
         }
 
 
-def fetch_ui_html() -> str:
+def fetch_ui_html(session: requests.Session) -> str:
+    """Fetch the UI HTML used to extract the anti-forgery token.
+
+    Important: must be fetched with the same session used for the subsequent
+    POST, because Vietstock may require cookies/session state.
+    """
     url = f"{UI_BASE}?page=1"
-    r = requests.get(
+    r = session.get(
         url,
         timeout=30,
         headers={
@@ -191,7 +196,7 @@ def extract_token(html: str) -> str:
     raise RuntimeError('Could not find __RequestVerificationToken in HTML')
 
 
-def post_events_json(*, token: str, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str):
+def post_events_json(*, session: requests.Session, token: str, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str):
     # Mimic vst.io.post (form-encoded)
     payload = {
         'eventTypeID': str(event_type_id),
@@ -207,7 +212,7 @@ def post_events_json(*, token: str, event_type_id: int, channel_id: int, page: i
         '__RequestVerificationToken': token,
     }
 
-    r = requests.post(
+    r = session.post(
         API_BASE,
         timeout=30,
         headers={
@@ -230,7 +235,9 @@ def post_events_json(*, token: str, event_type_id: int, channel_id: int, page: i
             return json.loads(r.content.decode('utf-8-sig'))
         except Exception as e:
             snippet = (r.text or '')[:500]
-            raise RuntimeError(f"Failed to parse events JSON: status={r.status_code} content_type={r.headers.get('content-type','')} snippet={snippet!r}") from e
+            raise RuntimeError(
+                f"Failed to parse events JSON: status={r.status_code} content_type={r.headers.get('content-type','')} snippet={snippet!r}"
+            ) from e
 
 
 def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> List[EventRow]:
@@ -275,7 +282,8 @@ def main() -> int:
     universe_regex = os.environ.get("UNIVERSE_REGEX", r"^[A-Z0-9]{3,4}$")
     universe_re = re.compile(universe_regex)
 
-    html = fetch_ui_html()
+    session = requests.Session()
+    html = fetch_ui_html(session)
     token = extract_token(html)
 
     # Vietstock expects dd/mm/yyyy
@@ -288,6 +296,7 @@ def main() -> int:
     for page in range(1, max_pages + 1):
         source_url = f"{UI_BASE}?page=1&tab={event_type_id}&group={channel_id}"
         obj = post_events_json(
+            session=session,
             token=token,
             event_type_id=event_type_id,
             channel_id=channel_id,
