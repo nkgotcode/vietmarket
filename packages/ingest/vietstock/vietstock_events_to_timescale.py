@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
-"""Ingest VietstockFinance events calendar into Timescale.
+"""Ingest VietstockFinance event calendar into Timescale.
 
-Source page:
-  https://finance.vietstock.vn/lich-su-kien.htm?page=N
+UI page:
+  https://finance.vietstock.vn/lich-su-kien.htm?page=1
 
-We parse table #event-content which includes:
-  Mã CK, Sàn, Ngày GDKHQ, Ngày ĐKCC, Ngày thực hiện, Nội dung sự kiện, Loại Sự kiện
+The HTML response does *not* contain the events table. The table is rendered by JS
+which POSTs to:
+  https://finance.vietstock.vn/data/eventstypedata
+
+So this ingestor:
+1) GETs the UI page to extract `__RequestVerificationToken`
+2) POSTs to `/data/eventstypedata` to get JSON rows
 
 We store rows in `corporate_actions`.
 
 Env:
 - PG_URL (required)
+- EVENT_TYPE_ID (optional, default 1)  # tab id for "Cổ tức, thưởng và phát hành thêm"
+- CHANNEL_ID (optional, default 0)     # group id; 0 = all
+- PAGE_SIZE (optional, default 50)
 - MAX_PAGES (optional, default 5)
-- START_PAGE (optional, default 1)
 - UNIVERSE_REGEX (optional, default '^[A-Z0-9]{3,4}$')
 
 Notes:
-- We intentionally ignore indices for ingest (VNINDEX/HNXINDEX/UPCOMINDEX) by regex.
+- We intentionally ignore indices for ingest by regex.
 - id is stable md5 hash of key fields.
 """
 
@@ -34,7 +41,8 @@ import psycopg2
 import psycopg2.extras
 import requests
 
-BASE = "https://finance.vietstock.vn/lich-su-kien.htm"
+UI_BASE = "https://finance.vietstock.vn/lich-su-kien.htm"
+API_BASE = "https://finance.vietstock.vn/data/eventstypedata"
 
 
 def pg_url() -> str:
@@ -144,13 +152,13 @@ class EventRow:
         }
 
 
-def fetch_page(page: int) -> str:
-    url = f"{BASE}?page={page}"
+def fetch_ui_html() -> str:
+    url = f"{UI_BASE}?page=1"
     r = requests.get(
         url,
-        timeout=20,
+        timeout=30,
         headers={
-            "user-agent": "vietmarket/1.0 (+https://github.com/nkgotcode/vietmarket)",
+            "user-agent": "Mozilla/5.0 (vietmarket; +https://github.com/nkgotcode/vietmarket)",
             "accept": "text/html,application/xhtml+xml",
         },
     )
@@ -158,33 +166,69 @@ def fetch_page(page: int) -> str:
     return r.text
 
 
-def parse_events(html: str, source_url: str, universe_re: re.Pattern) -> List[EventRow]:
-    rows = extract_table_rows(html)
+def extract_token(html: str) -> str:
+    m = re.search(r'name="__RequestVerificationToken"\s+type="hidden"\s+value="([^"]+)"', html, re.I)
+    if not m:
+        raise RuntimeError('Could not find __RequestVerificationToken in HTML')
+    return m.group(1)
+
+
+def post_events_json(*, token: str, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str):
+    # Mimic vst.io.post (form-encoded)
+    payload = {
+        'eventTypeID': str(event_type_id),
+        'channelID': str(channel_id),
+        'code': '',
+        'catID': '',
+        'fDate': from_date,
+        'tDate': to_date,
+        'page': str(page),
+        'pageSize': str(page_size),
+        'orderBy': 'Date1',
+        'orderDir': 'DESC',
+        '__RequestVerificationToken': token,
+    }
+
+    r = requests.post(
+        API_BASE,
+        timeout=30,
+        headers={
+            'user-agent': 'Mozilla/5.0 (vietmarket; +https://github.com/nkgotcode/vietmarket)',
+            'accept': 'application/json, text/javascript, */*; q=0.01',
+            'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'x-requested-with': 'XMLHttpRequest',
+            'referer': f"{UI_BASE}?page=1",
+        },
+        data=payload,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> List[EventRow]:
+    # API returns [rows, [[totalCount]]]
+    rows = obj[0] if isinstance(obj, list) and len(obj) > 0 else []
     events: List[EventRow] = []
 
-    # expected columns:
-    # [0]=STT, [1]=Ma CK, [2]=San, [3]=GDKHQ, [4]=DKCC, [5]=Ngay thuc hien, [6]=Noi dung, [7]=Loai su kien
-    for cells in rows:
-        if len(cells) < 8:
-            continue
-        ticker = (cells[1] or "").strip().upper()
+    for it in rows or []:
+        ticker = str(it.get('Code') or '').strip().upper()
         if not universe_re.match(ticker):
             continue
 
-        exchange = (cells[2] or "").strip().upper()
-        ex_date = parse_ddmmyyyy(cells[3])
-        record_date = parse_ddmmyyyy(cells[4])
-        pay_date = parse_ddmmyyyy(cells[5])
-        headline = (cells[6] or "").strip()
-        event_type = (cells[7] or "").strip()
+        exchange = str(it.get('Exchange') or '').strip().upper()
+        ex_date = it.get('GDKHQDate')
+        record_date = it.get('NDKCCDate')
+        pay_date = it.get('Time')
+        headline = str(it.get('Note') or '').strip()
+        event_type = str(it.get('Name') or '').strip()
 
         events.append(
             EventRow(
                 ticker=ticker,
                 exchange=exchange,
-                ex_date=ex_date,
-                record_date=record_date,
-                pay_date=pay_date,
+                ex_date=parse_ddmmyyyy(ex_date) if isinstance(ex_date, str) else None,
+                record_date=parse_ddmmyyyy(record_date) if isinstance(record_date, str) else None,
+                pay_date=parse_ddmmyyyy(pay_date) if isinstance(pay_date, str) else None,
                 headline=headline,
                 event_type=event_type,
                 source_url=source_url,
@@ -195,16 +239,36 @@ def parse_events(html: str, source_url: str, universe_re: re.Pattern) -> List[Ev
 
 
 def main() -> int:
-    start_page = int(os.environ.get("START_PAGE", "1"))
-    max_pages = int(os.environ.get("MAX_PAGES", "5"))
+    event_type_id = int(os.environ.get('EVENT_TYPE_ID', '1'))
+    channel_id = int(os.environ.get('CHANNEL_ID', '0'))
+    page_size = int(os.environ.get('PAGE_SIZE', '50'))
+    max_pages = int(os.environ.get('MAX_PAGES', '5'))
+
     universe_regex = os.environ.get("UNIVERSE_REGEX", r"^[A-Z0-9]{3,4}$")
     universe_re = re.compile(universe_regex)
 
+    html = fetch_ui_html()
+    token = extract_token(html)
+
+    # Vietstock expects dd/mm/yyyy
+    # Default: +/- 60 days around now
+    today = datetime.utcnow().date()
+    from_date = os.environ.get('FROM_DATE') or (today.replace(day=1)).strftime('%d/%m/%Y')
+    to_date = os.environ.get('TO_DATE') or (date(today.year + 1, today.month, 1)).strftime('%d/%m/%Y')
+
     all_events: List[EventRow] = []
-    for p in range(start_page, start_page + max_pages):
-        url = f"{BASE}?page={p}"
-        html = fetch_page(p)
-        all_events.extend(parse_events(html, url, universe_re))
+    for page in range(1, max_pages + 1):
+        source_url = f"{UI_BASE}?page=1&tab={event_type_id}&group={channel_id}"
+        obj = post_events_json(
+            token=token,
+            event_type_id=event_type_id,
+            channel_id=channel_id,
+            page=page,
+            page_size=page_size,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        all_events.extend(parse_events_from_json(obj, source_url, universe_re))
 
     payload = [e.to_pg() for e in all_events]
 
