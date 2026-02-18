@@ -199,18 +199,29 @@ def extract_token(html: str) -> str:
 def post_events_json(*, session: requests.Session, token: str, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str):
     """POST to Vietstock events endpoint and parse JSON.
 
-    The endpoint is somewhat flaky and may return:
-    - JSON with UTF-8 BOM
-    - HTML (homepage) when missing required cookies/session
-    - empty bodies with content-type application/json
-
-    Set DEBUG_VIETSTOCK=1 to dump response headers + first bytes.
+    Uses a stricter browser-like header profile and retries with an alternate
+    payload shape if the primary request returns an empty body.
     """
 
     debug = os.environ.get('DEBUG_VIETSTOCK') == '1'
 
-    # Mimic vst.io.post (form-encoded)
-    payload = {
+    base_headers = {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+        'accept': 'application/json, text/javascript, */*; q=0.01',
+        'accept-language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+        'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'x-requested-with': 'XMLHttpRequest',
+        'origin': 'https://finance.vietstock.vn',
+        'referer': f"{UI_BASE}?page=1",
+        'cache-control': 'no-cache',
+        'pragma': 'no-cache',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-dest': 'empty',
+        'requestverificationtoken': token,
+    }
+
+    payload_primary = {
         'eventTypeID': str(event_type_id),
         'channelID': str(channel_id),
         'code': '',
@@ -224,61 +235,87 @@ def post_events_json(*, session: requests.Session, token: str, event_type_id: in
         '__RequestVerificationToken': token,
     }
 
-    r = session.post(
-        API_BASE,
-        timeout=30,
-        headers={
-            'user-agent': 'Mozilla/5.0 (vietmarket; +https://github.com/nkgotcode/vietmarket)',
-            'accept': 'application/json, text/javascript, */*; q=0.01',
-            'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'x-requested-with': 'XMLHttpRequest',
-            'referer': f"{UI_BASE}?page=1",
-        },
-        data=payload,
-    )
+    # Alternate shape in case server-side model binding changed.
+    payload_alt = {
+        'eventTypeId': str(event_type_id),
+        'eventTypeID': str(event_type_id),
+        'channelId': str(channel_id),
+        'channelID': str(channel_id),
+        'group': str(channel_id),
+        'code': '',
+        'catID': '',
+        'fDate': from_date,
+        'tDate': to_date,
+        'page': str(page),
+        'pageSize': str(page_size),
+        'orderBy': 'Date1',
+        'orderDir': 'DESC',
+        '__RequestVerificationToken': token,
+    }
 
-    if debug:
-        head = r.content[:512]
-        print(
-            json.dumps(
-                {
-                    "debug": "vietstock_eventstypedata_response",
-                    "status": r.status_code,
-                    "url": r.url,
-                    "content_type": r.headers.get("content-type", ""),
-                    "content_length": r.headers.get("content-length", ""),
-                    "encoding": r.encoding,
-                    "cookies": {c.name: c.value for c in session.cookies},
-                    "head_hex": head.hex(),
-                    "head_text": head.decode("utf-8", errors="replace"),
-                },
-                ensure_ascii=False,
-            )
-        )
+    def _post(payload: dict, label: str):
+        r = session.post(API_BASE, timeout=30, headers=base_headers, data=payload)
 
-    r.raise_for_status()
-
-    # Vietstock sometimes returns JSON with a UTF-8 BOM prefix.
-    # requests' r.json() will fail with "Unexpected UTF-8 BOM".
-    try:
-        return r.json()
-    except Exception:
-        try:
-            return json.loads(r.content.decode('utf-8-sig'))
-        except Exception as e:
+        if debug:
             head = r.content[:512]
-            head_text = head.decode('utf-8', errors='replace')
-            header_dump = {k.lower(): v for k, v in r.headers.items()}
+            print(
+                json.dumps(
+                    {
+                        "debug": "vietstock_eventstypedata_response",
+                        "variant": label,
+                        "status": r.status_code,
+                        "url": r.url,
+                        "content_type": r.headers.get("content-type", ""),
+                        "content_length": r.headers.get("content-length", ""),
+                        "encoding": r.encoding,
+                        "cookies": {c.name: c.value for c in session.cookies},
+                        "head_hex": head.hex(),
+                        "head_text": head.decode("utf-8", errors="replace"),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+        r.raise_for_status()
+        return r
+
+    for idx, (label, payload) in enumerate((("primary", payload_primary), ("alt", payload_alt))):
+        r = _post(payload, label)
+
+        # Empty body: retry alternate payload once.
+        if (r.headers.get('content-length') == '0') or (len(r.content) == 0):
+            if idx == 0:
+                continue
             raise RuntimeError(
-                "Failed to parse events JSON: "
-                f"status={r.status_code} "
-                f"content_type={r.headers.get('content-type','')} "
-                f"content_length={r.headers.get('content-length','')} "
-                f"encoding={r.encoding!r} "
-                f"headers={header_dump} "
-                f"head_hex={head.hex()} "
-                f"head_text={head_text!r}"
-            ) from e
+                f"Empty response body from events endpoint after retries: status={r.status_code} headers={dict(r.headers)}"
+            )
+
+        # Vietstock sometimes returns JSON with a UTF-8 BOM prefix.
+        try:
+            return r.json()
+        except Exception:
+            try:
+                return json.loads(r.content.decode('utf-8-sig'))
+            except Exception as e:
+                head = r.content[:512]
+                head_text = head.decode('utf-8', errors='replace')
+                header_dump = {k.lower(): v for k, v in r.headers.items()}
+                # Try alternate payload once if primary parse failed.
+                if idx == 0:
+                    continue
+                raise RuntimeError(
+                    "Failed to parse events JSON: "
+                    f"variant={label} "
+                    f"status={r.status_code} "
+                    f"content_type={r.headers.get('content-type','')} "
+                    f"content_length={r.headers.get('content-length','')} "
+                    f"encoding={r.encoding!r} "
+                    f"headers={header_dump} "
+                    f"head_hex={head.hex()} "
+                    f"head_text={head_text!r}"
+                ) from e
+
+    raise RuntimeError("Unreachable: no response variant produced data")
 
 
 def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> List[EventRow]:
