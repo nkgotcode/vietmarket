@@ -167,10 +167,28 @@ def fetch_ui_html() -> str:
 
 
 def extract_token(html: str) -> str:
-    m = re.search(r'name="__RequestVerificationToken"\s+type="hidden"\s+value="([^"]+)"', html, re.I)
-    if not m:
-        raise RuntimeError('Could not find __RequestVerificationToken in HTML')
-    return m.group(1)
+    """Extract Vietstock anti-forgery token.
+
+    Vietstock's markup is not stable and often uses unquoted attributes, e.g.:
+      <input name=__RequestVerificationToken type=hidden value=...>
+
+    So we match the <input ...> tag and accept quoted or unquoted forms.
+    """
+
+    # Prefer matching inside the input tag.
+    patterns = [
+        # quoted
+        r"<input[^>]*\bname=['\"]?__RequestVerificationToken['\"]?[^>]*\bvalue=['\"]([^'\"]+)['\"]",
+        # unquoted value
+        r"<input[^>]*\bname=['\"]?__RequestVerificationToken['\"]?[^>]*\bvalue=([^\s>]+)",
+    ]
+
+    for pat in patterns:
+        m = re.search(pat, html, re.I)
+        if m:
+            return m.group(1).strip()
+
+    raise RuntimeError('Could not find __RequestVerificationToken in HTML')
 
 
 def post_events_json(*, token: str, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str):

@@ -49,3 +49,6 @@ vietstock-archive/archive.sqlite
 apps/web/convex/_generated/
 apps/web/convex/README.md
 apps/web/convex/tsconfig.json
+
+# generated status snapshots
+/deploy/status/milestone_state.json
