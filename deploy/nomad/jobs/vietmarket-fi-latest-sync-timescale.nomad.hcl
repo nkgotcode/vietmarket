@@ -8,43 +8,35 @@ job "vietmarket-fi-latest-sync-timescale" {
     time_zone        = "Asia/Ho_Chi_Minh"
   }
 
-  constraint {
-    attribute = "${attr.kernel.name}"
-    value     = "linux"
-  }
-
   group "sync" {
     count = 1
 
+    # Run on Mac mini witness where simplize.db lives.
     constraint {
-      attribute = "${node.unique.name}"
-      value     = "optiplex"
+      attribute = "${meta.role}"
+      value     = "witness"
     }
 
     task "fi_latest_sync" {
-      driver = "docker"
+      driver = "raw_exec"
 
       config {
-        image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        force_pull = true
-
-        entrypoint = ["python3", "/app/packages/ingest/simplize/fi_latest_sync_pg.py"]
-
-        # Mount local Simplize SQLite DB into container
-        volumes = [
-          "/home/itsnk/vietmarket/data/simplize:/app/data/simplize:ro",
+        command = "bash"
+        args = [
+          "-lc",
+          "set -euo pipefail; cd /Users/lenamkhanh/vietmarket; python3 -m pip -q install --user psycopg2-binary==2.9.9 >/dev/null 2>&1 || true; PG_URL=\"$PG_URL\" SIMPLIZE_DB=\"$SIMPLIZE_DB\" PERIOD=\"$PERIOD\" python3 packages/ingest/simplize/fi_latest_sync_pg.py",
         ]
       }
 
       env {
         PG_URL      = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
-        SIMPLIZE_DB = "/app/data/simplize/simplize.db"
+        SIMPLIZE_DB = "/Users/lenamkhanh/vietmarket/data/simplize/simplize.db"
         PERIOD      = "Q"
       }
 
       resources {
-        cpu    = 200
-        memory = 256
+        cpu    = 300
+        memory = 512
       }
     }
   }
