@@ -12,6 +12,12 @@ This folder documents Nomad usage for VietMarket ingestion + HA DB.
 
 ## Jobs
 
+### Corporate actions / dividends
+
+- `vietmarket-corporate-actions-ingest` (batch + periodic)
+  - Scrapes VietstockFinance events calendar (`/lich-su-kien.htm`) and upserts into Timescale `corporate_actions`.
+  - Runs on optiplex.
+
 ### Candles (periodic batch)
 - `jobs/vietmarket-candles-timescale-latest.nomad.hcl` — near-real-time refresh into Timescale (multi-tf windowed)
 - `jobs/vietmarket-candles-timescale-backfill.nomad.hcl` — **1D** full-history backfill into Timescale (cursor persisted)
