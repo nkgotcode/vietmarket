@@ -728,15 +728,24 @@ ON CONFLICT (id) DO UPDATE SET
 
     with psycopg2.connect(pg_url()) as pg:
         with pg.cursor() as cur:
-            psycopg2.extras.execute_batch(cur, sql, payload, page_size=200)
+            # Keep only tickers present in symbols to avoid FK violations
+            cur.execute("select ticker from symbols")
+            known = {r[0] for r in cur.fetchall()}
+            payload_filtered = [p for p in payload if p.get('ticker') in known]
+            dropped_unknown = len(payload) - len(payload_filtered)
+
+            if payload_filtered:
+                psycopg2.extras.execute_batch(cur, sql, payload_filtered, page_size=200)
 
     print(
         json.dumps(
             {
                 "ok": True,
                 "pages": max_pages,
-                "events": len(payload),
-                "sample": payload[:2],
+                "events_raw": len(payload),
+                "events_insertable": len(payload_filtered),
+                "dropped_unknown_ticker": dropped_unknown,
+                "sample": payload_filtered[:2],
             },
             ensure_ascii=False,
         )
