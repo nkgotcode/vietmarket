@@ -370,21 +370,49 @@ def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> Lis
     return events
 
 
+def fetch_page_with_fresh_session(*, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str, retries: int):
+    """Fetch one API page by re-bootstrapping session/token on every attempt.
+
+    Vietstock occasionally returns HTTP 200 with empty body when the
+    request/session tuple is considered invalid. Recreating the full
+    page+token+POST flow improves reliability in headless environments.
+    """
+    last_err = None
+    for _ in range(max(1, retries)):
+        session = requests.Session()
+        html = fetch_ui_html(session)
+        token = extract_token(html)
+        try:
+            return post_events_json(
+                session=session,
+                token=token,
+                event_type_id=event_type_id,
+                channel_id=channel_id,
+                page=page,
+                page_size=page_size,
+                from_date=from_date,
+                to_date=to_date,
+            )
+        except Exception as e:
+            last_err = e
+            continue
+
+    if last_err:
+        raise last_err
+    raise RuntimeError("Unexpected empty retry state")
+
+
 def main() -> int:
     event_type_id = int(os.environ.get('EVENT_TYPE_ID', '1'))
     channel_id = int(os.environ.get('CHANNEL_ID', '0'))
     page_size = int(os.environ.get('PAGE_SIZE', '50'))
     max_pages = int(os.environ.get('MAX_PAGES', '5'))
+    page_retries = int(os.environ.get('PAGE_RETRIES', '3'))
 
     universe_regex = os.environ.get("UNIVERSE_REGEX", r"^[A-Z0-9]{3,4}$")
     universe_re = re.compile(universe_regex)
 
-    session = requests.Session()
-    html = fetch_ui_html(session)
-    token = extract_token(html)
-
     # Vietstock expects dd/mm/yyyy
-    # Default: +/- 60 days around now
     today = datetime.utcnow().date()
     from_date = os.environ.get('FROM_DATE') or (today.replace(day=1)).strftime('%d/%m/%Y')
     to_date = os.environ.get('TO_DATE') or (date(today.year + 1, today.month, 1)).strftime('%d/%m/%Y')
@@ -392,15 +420,14 @@ def main() -> int:
     all_events: List[EventRow] = []
     for page in range(1, max_pages + 1):
         source_url = f"{UI_BASE}?page=1&tab={event_type_id}&group={channel_id}"
-        obj = post_events_json(
-            session=session,
-            token=token,
+        obj = fetch_page_with_fresh_session(
             event_type_id=event_type_id,
             channel_id=channel_id,
             page=page,
             page_size=page_size,
             from_date=from_date,
             to_date=to_date,
+            retries=page_retries,
         )
         all_events.extend(parse_events_from_json(obj, source_url, universe_re))
 
