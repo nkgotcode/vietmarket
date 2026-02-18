@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
+import MarketOverviewClient from './MarketOverviewClient';
 
 export default function AppHome() {
   return (
@@ -9,7 +10,7 @@ export default function AppHome() {
         <UserButton />
       </div>
       <p style={{ color: '#666' }}>
-        First version will include charts (KLineChart) + Vietstock news + ticker context.
+        Market overview (latest snapshot + top movers) is live below. Charts + Vietstock news coming next.
       </p>
 
       <ul>
@@ -17,9 +18,11 @@ export default function AppHome() {
           <Link href="/app/chart-demo">Chart demo</Link>
         </li>
         <li>
-          <Link href="/app/symbol/VCB">Symbol page (stub)</Link>
+          <Link href="/app/symbol/VCB">Symbol page</Link>
         </li>
       </ul>
+
+      <MarketOverviewClient />
     </main>
   );
 }

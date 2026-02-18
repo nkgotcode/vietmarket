@@ -71,9 +71,10 @@ export default function ChartClient({ ticker }: { ticker: string }) {
         if (cancelled) return;
         setInitRows(k);
         setOldestTs(k.length ? k[0].timestamp : null);
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (cancelled) return;
-        setErr(String(e?.message || e));
+        const msg = e instanceof Error ? e.message : String(e);
+        setErr(msg);
       } finally {
         if (!cancelled) setLoading(false);
       }
