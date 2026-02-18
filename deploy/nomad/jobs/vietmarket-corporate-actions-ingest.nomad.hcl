@@ -31,9 +31,10 @@ job "vietmarket-corporate-actions-ingest" {
       }
 
       env {
-        PG_URL     = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
-        MAX_PAGES  = "10"
-        START_PAGE = "1"
+        PG_URL       = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
+        MAX_PAGES    = "10"
+        START_PAGE   = "1"
+        PAGE_RETRIES = "5"
       }
 
       resources {
