@@ -30,3 +30,8 @@ test('symbol page shows chart + news + fundamentals sections', async ({ page }) 
 
   await expect(page.locator('text=History API error')).toHaveCount(0);
 });
+
+test('screener page loads', async ({ page }) => {
+  await page.goto('/app/screener');
+  await expect(page.getByRole('heading', { name: 'Screener' })).toBeVisible();
+});
