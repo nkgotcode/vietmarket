@@ -177,6 +177,28 @@ CREATE INDEX IF NOT EXISTS idx_article_symbols_article
   ON article_symbols (article_url);
 
 -------------------------------------------------------------------------------
+-- Corporate actions / dividends (VietstockFinance events calendar)
+-------------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS corporate_actions (
+  id TEXT PRIMARY KEY,
+  ticker TEXT NOT NULL REFERENCES symbols(ticker),
+  exchange TEXT,
+  ex_date DATE,
+  record_date DATE,
+  pay_date DATE,
+  headline TEXT,
+  event_type TEXT,
+  source TEXT NOT NULL DEFAULT 'vietstock',
+  source_url TEXT,
+  raw_json JSONB,
+  ingested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_corporate_actions_ticker_exdate ON corporate_actions(ticker, ex_date DESC);
+CREATE INDEX IF NOT EXISTS idx_corporate_actions_exdate ON corporate_actions(ex_date DESC);
+
+-------------------------------------------------------------------------------
 -- Fundamentals / facts (Simplize)
 -------------------------------------------------------------------------------
 

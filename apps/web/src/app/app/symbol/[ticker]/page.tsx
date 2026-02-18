@@ -2,6 +2,7 @@ import Link from 'next/link';
 import ChartClient from './ChartClient';
 import SymbolHeadlinesClient from './SymbolHeadlinesClient';
 import FundamentalsClient from './FundamentalsClient';
+import CorporateActionsClient from './CorporateActionsClient';
 import AuthWidget from '../../AuthWidget';
 
 export default async function SymbolPage({ params }: { params: Promise<{ ticker: string }> }) {
@@ -24,6 +25,7 @@ export default async function SymbolPage({ params }: { params: Promise<{ ticker:
       </div>
 
       <SymbolHeadlinesClient ticker={t} />
+      <CorporateActionsClient ticker={t} />
       <FundamentalsClient ticker={t} />
     </main>
   );

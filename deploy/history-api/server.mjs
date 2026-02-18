@@ -361,6 +361,90 @@ LIMIT $${params.length}
   }
 });
 
+app.get('/corporate-actions/latest', async (req, res) => {
+  if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 500);
+  const beforeExDate = req.query.beforeExDate ? String(req.query.beforeExDate) : null; // YYYY-MM-DD
+  const beforeId = req.query.beforeId ? String(req.query.beforeId) : null;
+
+  const params = [];
+  let where = 'WHERE ex_date IS NOT NULL';
+  if (beforeExDate) {
+    params.push(beforeExDate);
+    where += ` AND (ex_date, id) < ($${params.length}::date, $${params.length + 1})`;
+    params.push(beforeId || 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz');
+  }
+  params.push(limit);
+
+  const sql = `
+SELECT id, ticker, exchange, ex_date, record_date, pay_date, headline, event_type, source, source_url, ingested_at
+FROM corporate_actions
+${where}
+ORDER BY ex_date DESC, id DESC
+LIMIT $${params.length}
+  `.trim();
+
+  try {
+    const r = await pool.query(sql, params);
+    const rows = r.rows || [];
+    const last = rows.length ? rows[rows.length - 1] : null;
+    res.json({
+      ok: true,
+      count: rows.length,
+      rows,
+      nextCursor: last ? { beforeExDate: last.ex_date, beforeId: last.id } : null,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.get('/corporate-actions/by-ticker', async (req, res) => {
+  if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const ticker = String(req.query.ticker || '').trim().toUpperCase();
+  const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 500);
+  const beforeExDate = req.query.beforeExDate ? String(req.query.beforeExDate) : null; // YYYY-MM-DD
+  const beforeId = req.query.beforeId ? String(req.query.beforeId) : null;
+
+  if (!ticker) return res.status(400).json({ ok: false, error: 'missing ticker' });
+
+  const params = [ticker];
+  let where = 'WHERE ticker = $1 AND ex_date IS NOT NULL';
+  if (beforeExDate) {
+    params.push(beforeExDate);
+    params.push(beforeId || 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz');
+    where += ` AND (ex_date, id) < ($2::date, $3)`;
+  }
+  params.push(limit);
+
+  const sql = `
+SELECT id, ticker, exchange, ex_date, record_date, pay_date, headline, event_type, source, source_url, ingested_at
+FROM corporate_actions
+${where}
+ORDER BY ex_date DESC, id DESC
+LIMIT $${params.length}
+  `.trim();
+
+  try {
+    const r = await pool.query(sql, params);
+    const rows = r.rows || [];
+    const last = rows.length ? rows[rows.length - 1] : null;
+    res.json({
+      ok: true,
+      ticker,
+      count: rows.length,
+      rows,
+      nextCursor: last ? { beforeExDate: last.ex_date, beforeId: last.id } : null,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`history-api listening on :${PORT}`);
 });
