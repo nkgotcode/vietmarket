@@ -384,6 +384,40 @@ def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> Lis
     return events
 
 
+def parse_events_from_table_rows(rows: List[List[str]], source_url: str, universe_re: re.Pattern) -> List[EventRow]:
+    """Parse events from rendered HTML table rows (Playwright table-scrape fallback)."""
+    events: List[EventRow] = []
+    for cells in rows:
+        if len(cells) < 6:
+            continue
+
+        ticker = str(cells[0] or '').strip().upper()
+        if not universe_re.match(ticker):
+            continue
+
+        exchange = str(cells[1] or '').strip().upper() if len(cells) > 1 else ''
+        ex_date = parse_ddmmyyyy(cells[2]) if len(cells) > 2 else None
+        record_date = parse_ddmmyyyy(cells[3]) if len(cells) > 3 else None
+        pay_date = parse_ddmmyyyy(cells[4]) if len(cells) > 4 else None
+        headline = str(cells[5] or '').strip() if len(cells) > 5 else ''
+        event_type = str(cells[6] or '').strip() if len(cells) > 6 else ''
+
+        events.append(
+            EventRow(
+                ticker=ticker,
+                exchange=exchange,
+                ex_date=ex_date,
+                record_date=record_date,
+                pay_date=pay_date,
+                headline=headline,
+                event_type=event_type,
+                source_url=source_url,
+            )
+        )
+
+    return events
+
+
 def post_events_json_curl_cffi(*, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str):
     """Fallback using curl_cffi browser impersonation (if installed)."""
     if cf_requests is None:
@@ -507,6 +541,26 @@ def post_events_json_playwright(*, event_type_id: int, channel_id: int, page: in
         return json.loads(txt.encode('utf-8').decode('utf-8-sig'))
 
 
+def fetch_events_table_playwright(*, event_type_id: int, channel_id: int, page: int, source_url: str, universe_re: re.Pattern) -> List[EventRow]:
+    """Extract rows from rendered #event-content table as final fallback."""
+    if sync_playwright is None:
+        raise RuntimeError("playwright not available for table scrape")
+
+    chromium_path = os.environ.get('CHROMIUM_PATH', '/usr/bin/chromium')
+    with sync_playwright() as p:
+        browser = p.chromium.launch(executable_path=chromium_path, headless=True, args=['--no-sandbox'])
+        context = browser.new_context(locale='vi-VN')
+        page_obj = context.new_page()
+        target = f"{UI_BASE}?page={page}&tab={event_type_id}&group={channel_id}"
+        page_obj.goto(target, wait_until='domcontentloaded', timeout=45000)
+        page_obj.wait_for_selector('#event-content tr', timeout=20000)
+        html = page_obj.content()
+        browser.close()
+
+    rows = extract_table_rows(html)
+    return parse_events_from_table_rows(rows, source_url, universe_re)
+
+
 def fetch_page_with_fresh_session(*, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str, retries: int):
     """Fetch one API page by re-bootstrapping session/token on every attempt."""
     last_err = None
@@ -576,17 +630,30 @@ def main() -> int:
 
     all_events: List[EventRow] = []
     for page in range(1, max_pages + 1):
-        source_url = f"{UI_BASE}?page=1&tab={event_type_id}&group={channel_id}"
-        obj = fetch_page_with_fresh_session(
-            event_type_id=event_type_id,
-            channel_id=channel_id,
-            page=page,
-            page_size=page_size,
-            from_date=from_date,
-            to_date=to_date,
-            retries=page_retries,
-        )
-        all_events.extend(parse_events_from_json(obj, source_url, universe_re))
+        source_url = f"{UI_BASE}?page={page}&tab={event_type_id}&group={channel_id}"
+        try:
+            obj = fetch_page_with_fresh_session(
+                event_type_id=event_type_id,
+                channel_id=channel_id,
+                page=page,
+                page_size=page_size,
+                from_date=from_date,
+                to_date=to_date,
+                retries=page_retries,
+            )
+            all_events.extend(parse_events_from_json(obj, source_url, universe_re))
+        except Exception:
+            if os.environ.get('ENABLE_TABLE_SCRAPE_FALLBACK', '1') != '1':
+                raise
+            all_events.extend(
+                fetch_events_table_playwright(
+                    event_type_id=event_type_id,
+                    channel_id=channel_id,
+                    page=page,
+                    source_url=source_url,
+                    universe_re=universe_re,
+                )
+            )
 
     payload = [e.to_pg() for e in all_events]
 
