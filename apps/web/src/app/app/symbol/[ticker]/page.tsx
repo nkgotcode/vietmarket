@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
 import ChartClient from './ChartClient';
+import SymbolHeadlinesClient from './SymbolHeadlinesClient';
 
 export default async function SymbolPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
@@ -20,6 +21,8 @@ export default async function SymbolPage({ params }: { params: Promise<{ ticker:
       <div style={{ marginTop: 14 }}>
         <ChartClient ticker={t} />
       </div>
+
+      <SymbolHeadlinesClient ticker={t} />
     </main>
   );
 }
