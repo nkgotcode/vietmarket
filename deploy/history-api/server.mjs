@@ -24,7 +24,8 @@ if (!PG_URL) {
 
 const pool = new Pool({
   connectionString: PG_URL,
-  max: 10,
+  // Keep pool small; Timescale is shared with heavy backfill jobs.
+  max: Number(process.env.PG_POOL_MAX || 5),
 });
 
 app.get('/healthz', async (_req, res) => {
@@ -166,6 +167,87 @@ LIMIT $2
     }));
 
     res.json({ ok: true, tf, count: rows.length, rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+// Fundamentals (Simplize → fi_latest)
+app.get('/fundamentals/latest', async (req, res) => {
+  if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const ticker = String(req.query.ticker || '').trim().toUpperCase();
+  const period = String(req.query.period || 'Q').trim().toUpperCase();
+  const statement = String(req.query.statement || '').trim();
+  const limit = Math.min(Math.max(Number(req.query.limit || 200), 1), 2000);
+
+  if (!ticker) return res.status(400).json({ ok: false, error: 'missing ticker' });
+
+  const params = [ticker, period];
+  let where = 'WHERE ticker = $1 AND period = $2';
+  if (statement) {
+    params.push(statement);
+    where += ` AND statement = $${params.length}`;
+  }
+  params.push(limit);
+
+  const sql = `
+SELECT ticker, period, statement, period_date, metric, value, fetched_at, ingested_at
+FROM fi_latest
+${where}
+ORDER BY statement, metric
+LIMIT $${params.length}
+  `.trim();
+
+  try {
+    const r = await pool.query(sql, params);
+    res.json({ ok: true, ticker, period, statement: statement || null, count: r.rows?.length || 0, rows: r.rows || [] });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.get('/screener', async (req, res) => {
+  if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const metric = String(req.query.metric || '').trim();
+  const period = String(req.query.period || 'Q').trim().toUpperCase();
+  const statement = String(req.query.statement || '').trim();
+  const minV = req.query.min != null ? Number(req.query.min) : null;
+  const maxV = req.query.max != null ? Number(req.query.max) : null;
+  const limit = Math.min(Math.max(Number(req.query.limit || 200), 1), 2000);
+
+  if (!metric) return res.status(400).json({ ok: false, error: 'missing metric' });
+
+  const params = [metric, period];
+  let where = 'WHERE metric = $1 AND period = $2';
+  if (statement) {
+    params.push(statement);
+    where += ` AND statement = $${params.length}`;
+  }
+  if (minV != null && Number.isFinite(minV)) {
+    params.push(minV);
+    where += ` AND value >= $${params.length}`;
+  }
+  if (maxV != null && Number.isFinite(maxV)) {
+    params.push(maxV);
+    where += ` AND value <= $${params.length}`;
+  }
+  params.push(limit);
+
+  const sql = `
+SELECT ticker, period, statement, period_date, metric, value
+FROM fi_latest
+${where}
+ORDER BY value DESC NULLS LAST
+LIMIT $${params.length}
+  `.trim();
+
+  try {
+    const r = await pool.query(sql, params);
+    res.json({ ok: true, metric, period, statement: statement || null, count: r.rows?.length || 0, rows: r.rows || [] });
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });

@@ -20,7 +20,7 @@ job "vietmarket-candles-timescale-backfill" {
   # ============================
 
   group "primary_backfill_1d" {
-    count = 12
+    count = 4
 
     constraint {
       attribute = "${node.unique.name}"
@@ -68,7 +68,7 @@ job "vietmarket-candles-timescale-backfill" {
   }
 
   group "standby_backfill_1d" {
-    count = 12
+    count = 4
 
     constraint {
       attribute = "${node.unique.name}"
