@@ -52,12 +52,12 @@ def main() -> int:
     if not dbp.exists():
         raise RuntimeError(f"simplize db not found: {dbp}")
 
-    s = sqlite3.connect(str(dbp))
-    s.row_factory = sqlite3.Row
+    sconn = sqlite3.connect(str(dbp))
+    sconn.row_factory = sqlite3.Row
 
     # Schema assumption: fi_points(ticker, period, statement, periodDate, metric, value, fetchedAt)
     # Pull latest periodDate per (ticker,period,statement,metric)
-    rows = s.execute(
+    rows = sconn.execute(
         """
         SELECT f.ticker, f.period, f.statement, f.periodDate AS period_date,
                f.metric, f.value, f.fetchedAt AS fetched_at
@@ -106,7 +106,7 @@ def main() -> int:
             }
         )
 
-    s.close()
+    sconn.close()
 
     sql = """
     INSERT INTO fi_latest (ticker, period, statement, period_date, metric, value, fetched_at, ingested_at)
