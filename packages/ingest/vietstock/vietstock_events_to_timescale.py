@@ -266,9 +266,18 @@ def post_events_json(*, session: requests.Session, token: str, event_type_id: in
         try:
             return json.loads(r.content.decode('utf-8-sig'))
         except Exception as e:
-            snippet = (r.text or '')[:500]
+            head = r.content[:512]
+            head_text = head.decode('utf-8', errors='replace')
+            header_dump = {k.lower(): v for k, v in r.headers.items()}
             raise RuntimeError(
-                f"Failed to parse events JSON: status={r.status_code} content_type={r.headers.get('content-type','')} snippet={snippet!r}"
+                "Failed to parse events JSON: "
+                f"status={r.status_code} "
+                f"content_type={r.headers.get('content-type','')} "
+                f"content_length={r.headers.get('content-length','')} "
+                f"encoding={r.encoding!r} "
+                f"headers={header_dump} "
+                f"head_hex={head.hex()} "
+                f"head_text={head_text!r}"
             ) from e
 
 
