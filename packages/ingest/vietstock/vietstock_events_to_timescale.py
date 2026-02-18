@@ -197,6 +197,18 @@ def extract_token(html: str) -> str:
 
 
 def post_events_json(*, session: requests.Session, token: str, event_type_id: int, channel_id: int, page: int, page_size: int, from_date: str, to_date: str):
+    """POST to Vietstock events endpoint and parse JSON.
+
+    The endpoint is somewhat flaky and may return:
+    - JSON with UTF-8 BOM
+    - HTML (homepage) when missing required cookies/session
+    - empty bodies with content-type application/json
+
+    Set DEBUG_VIETSTOCK=1 to dump response headers + first bytes.
+    """
+
+    debug = os.environ.get('DEBUG_VIETSTOCK') == '1'
+
     # Mimic vst.io.post (form-encoded)
     payload = {
         'eventTypeID': str(event_type_id),
@@ -224,6 +236,26 @@ def post_events_json(*, session: requests.Session, token: str, event_type_id: in
         },
         data=payload,
     )
+
+    if debug:
+        head = r.content[:512]
+        print(
+            json.dumps(
+                {
+                    "debug": "vietstock_eventstypedata_response",
+                    "status": r.status_code,
+                    "url": r.url,
+                    "content_type": r.headers.get("content-type", ""),
+                    "content_length": r.headers.get("content-length", ""),
+                    "encoding": r.encoding,
+                    "cookies": {c.name: c.value for c in session.cookies},
+                    "head_hex": head.hex(),
+                    "head_text": head.decode("utf-8", errors="replace"),
+                },
+                ensure_ascii=False,
+            )
+        )
+
     r.raise_for_status()
 
     # Vietstock sometimes returns JSON with a UTF-8 BOM prefix.
