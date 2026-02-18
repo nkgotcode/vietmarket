@@ -11,12 +11,26 @@ type Row = {
   value: number | null;
 };
 
+const PRESETS: Array<{ label: string; statement: string; metric: string; min?: string; max?: string }> = [
+  { label: 'P/E', statement: 'kpi', metric: 'pe' },
+  { label: 'P/B', statement: 'kpi', metric: 'pb' },
+  { label: 'EV/EBITDA', statement: 'kpi', metric: 'evEbitda' },
+  { label: 'ROE', statement: 'kpi', metric: 'returnOnEquity', min: '0.15' },
+  { label: 'ROA', statement: 'kpi', metric: 'returnOnAssets', min: '0.05' },
+  { label: 'Gross margin', statement: 'kpi', metric: 'grossMargin', min: '0.15' },
+  { label: 'Net margin', statement: 'kpi', metric: 'netMargin', min: '0.08' },
+  { label: 'D/E (net)', statement: 'kpi', metric: 'netDebtEquityRatio', max: '1.5' },
+  { label: 'D/E (liabilities)', statement: 'kpi', metric: 'liabilitiesToEquity', max: '2.0' },
+  { label: 'Interest coverage', statement: 'kpi', metric: 'interestCoverageRatio', min: '3' },
+  { label: 'Current ratio', statement: 'kpi', metric: 'currentRatio', min: '1' },
+];
+
 const DEFAULTS = {
-  metric: 'pe',
+  metric: 'returnOnEquity',
   period: 'Q',
-  statement: 'ratio',
-  min: '',
-  max: '15',
+  statement: 'kpi',
+  min: '0.15',
+  max: '',
   limit: '200',
 };
 
@@ -75,13 +89,37 @@ export default function ScreenerClient() {
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'end', padding: 12, border: '1px solid #eee', borderRadius: 8 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, width: '100%' }}>
+          {PRESETS.map((p) => (
+            <button
+              key={p.label}
+              onClick={() => {
+                setStatement(p.statement);
+                setMetric(p.metric);
+                setMin(p.min ?? '');
+                setMax(p.max ?? '');
+              }}
+              style={{
+                border: '1px solid #ddd',
+                background: '#fff',
+                padding: '6px 10px',
+                borderRadius: 999,
+                cursor: 'pointer',
+                fontSize: 13,
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
         <label style={{ display: 'grid', gap: 4 }}>
           <span style={{ fontSize: 12, color: '#666' }}>Statement</span>
           <select value={statement} onChange={(e) => setStatement(e.target.value)}>
-            <option value="ratio">ratio</option>
-            <option value="is">is</option>
-            <option value="bs">bs</option>
-            <option value="cf">cf</option>
+            <option value="kpi">kpi (named metrics)</option>
+            <option value="ratio">ratio (coded)</option>
+            <option value="is">is (coded)</option>
+            <option value="bs">bs (coded)</option>
+            <option value="cf">cf (coded)</option>
           </select>
         </label>
 
