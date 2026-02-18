@@ -20,12 +20,13 @@ test('app home shows market overview + headlines + pagination', async ({ page })
   }
 });
 
-test('symbol page shows chart + news section', async ({ page }) => {
+test('symbol page shows chart + news + fundamentals sections', async ({ page }) => {
   await page.goto('/app/symbol/VCB');
 
   await expect(page.getByRole('heading', { name: 'VCB' })).toBeVisible();
   await expect(page.getByText('Timeframe')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'News' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Fundamentals/i })).toBeVisible();
 
   await expect(page.locator('text=History API error')).toHaveCount(0);
 });
