@@ -453,8 +453,9 @@ def post_events_json_playwright(*, event_type_id: int, channel_id: int, page: in
         'orderDir': 'DESC',
     }
 
+    chromium_path = os.environ.get('CHROMIUM_PATH', '/usr/bin/chromium')
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
+        browser = p.chromium.launch(executable_path=chromium_path, headless=True, args=['--no-sandbox'])
         context = browser.new_context(locale='vi-VN')
         page_obj = context.new_page()
         page_obj.goto(f"{UI_BASE}?page=1", wait_until='domcontentloaded', timeout=45000)

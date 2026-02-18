@@ -9,6 +9,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     wget \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
 
 # Python deps
@@ -22,8 +23,8 @@ RUN pip install --no-cache-dir \
     numpy==2.0.1 \
     psycopg2-binary==2.9.9
 
-# Install Chromium for Playwright fallback.
-RUN python -m playwright install --with-deps chromium
+# Use distro Chromium for Playwright fallback.
+ENV CHROMIUM_PATH=/usr/bin/chromium
 
 # Copy only what we need for ingest.
 COPY packages/ingest ./packages/ingest
