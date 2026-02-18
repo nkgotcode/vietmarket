@@ -122,6 +122,15 @@ Prefer reading from `candles_latest` (exact latest row per ticker+tf) instead of
 
 ### Time-bounded cross-sectional scans
 Always bound by time and tf, e.g. `WHERE tf='15m' AND ts BETWEEN from_ms AND to_ms`.
+
+### News endpoints + pagination
+- `GET /news/latest?limit=50`
+- `GET /news/latest?limit=50&beforePublishedAt=<ISO>&beforeUrl=<url>`
+
+- `GET /news/by-ticker?ticker=VCB&limit=50`
+- `GET /news/by-ticker?ticker=VCB&limit=50&beforePublishedAt=<ISO>&beforeUrl=<url>`
+
+These use keyset pagination ordered by `(published_at desc, url desc)`.
 ```
 
 ## Common Issues

@@ -78,9 +78,13 @@ export async function fetchTopMovers(params: { tf: TF; limit?: number }): Promis
   return { rows: (j?.rows || []) as TopMoverRow[] };
 }
 
-export async function fetchNewsLatest(params: { limit?: number } = {}): Promise<{ rows: NewsRow[] }> {
+export type NewsCursor = { beforePublishedAt: string | null; beforeUrl: string };
+
+export async function fetchNewsLatest(params: { limit?: number; cursor?: NewsCursor | null } = {}): Promise<{ rows: NewsRow[]; nextCursor: NewsCursor | null }> {
   const url = new URL('/api/history/news/latest', window.location.origin);
   if (params.limit != null) url.searchParams.set('limit', String(params.limit));
+  if (params.cursor?.beforePublishedAt) url.searchParams.set('beforePublishedAt', params.cursor.beforePublishedAt);
+  if (params.cursor?.beforeUrl) url.searchParams.set('beforeUrl', params.cursor.beforeUrl);
 
   const r = await fetch(url.toString(), { cache: 'no-store' });
   if (!r.ok) {
@@ -89,13 +93,15 @@ export async function fetchNewsLatest(params: { limit?: number } = {}): Promise<
   }
 
   const j = await r.json();
-  return { rows: (j?.rows || []) as NewsRow[] };
+  return { rows: (j?.rows || []) as NewsRow[], nextCursor: (j?.nextCursor || null) as NewsCursor | null };
 }
 
-export async function fetchNewsByTicker(params: { ticker: string; limit?: number }): Promise<{ rows: NewsRow[] }> {
+export async function fetchNewsByTicker(params: { ticker: string; limit?: number; cursor?: NewsCursor | null }): Promise<{ rows: NewsRow[]; nextCursor: NewsCursor | null }> {
   const url = new URL('/api/history/news/by-ticker', window.location.origin);
   url.searchParams.set('ticker', params.ticker);
   if (params.limit != null) url.searchParams.set('limit', String(params.limit));
+  if (params.cursor?.beforePublishedAt) url.searchParams.set('beforePublishedAt', params.cursor.beforePublishedAt);
+  if (params.cursor?.beforeUrl) url.searchParams.set('beforeUrl', params.cursor.beforeUrl);
 
   const r = await fetch(url.toString(), { cache: 'no-store' });
   if (!r.ok) {
@@ -104,5 +110,5 @@ export async function fetchNewsByTicker(params: { ticker: string; limit?: number
   }
 
   const j = await r.json();
-  return { rows: (j?.rows || []) as NewsRow[] };
+  return { rows: (j?.rows || []) as NewsRow[], nextCursor: (j?.nextCursor || null) as NewsCursor | null };
 }

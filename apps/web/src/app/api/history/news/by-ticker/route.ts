@@ -15,10 +15,14 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const ticker = url.searchParams.get('ticker') || '';
   const limit = url.searchParams.get('limit');
+  const beforePublishedAt = url.searchParams.get('beforePublishedAt');
+  const beforeUrl = url.searchParams.get('beforeUrl');
 
   const upstream = new URL(baseUrl.replace(/\/$/, '') + '/news/by-ticker');
   upstream.searchParams.set('ticker', ticker);
   if (limit) upstream.searchParams.set('limit', limit);
+  if (beforePublishedAt) upstream.searchParams.set('beforePublishedAt', beforePublishedAt);
+  if (beforeUrl) upstream.searchParams.set('beforeUrl', beforeUrl);
 
   const r = await fetch(upstream.toString(), {
     headers: { 'x-api-key': apiKey },

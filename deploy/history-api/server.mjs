@@ -178,8 +178,22 @@ app.get('/news/latest', async (req, res) => {
   if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
+  const beforePublishedAt = req.query.beforePublishedAt ? String(req.query.beforePublishedAt) : null;
+  const beforeUrl = req.query.beforeUrl ? String(req.query.beforeUrl) : null;
 
-  // Uses index on articles(published_at desc). Keep payload small.
+  const params = [limit];
+  let where = "WHERE a.fetch_status = 'fetched'";
+
+  // Keyset pagination on (published_at desc, url desc)
+  if (beforePublishedAt && beforeUrl) {
+    params.push(beforePublishedAt);
+    params.push(beforeUrl);
+    where += ` AND (a.published_at, a.url) < ($${params.length - 1}, $${params.length})`;
+  } else if (beforePublishedAt) {
+    params.push(beforePublishedAt);
+    where += ` AND a.published_at < $${params.length}`;
+  }
+
   const sql = `
 SELECT
   a.url,
@@ -190,14 +204,14 @@ SELECT
   coalesce(array_agg(s.ticker) filter (where s.ticker is not null), '{}'::text[]) as tickers
 FROM articles a
 LEFT JOIN article_symbols s ON s.article_url = a.url
-WHERE a.fetch_status = 'fetched'
+${where}
 GROUP BY a.url, a.title, a.source, a.published_at, a.text
-ORDER BY a.published_at DESC NULLS LAST
+ORDER BY a.published_at DESC NULLS LAST, a.url DESC
 LIMIT $1
   `.trim();
 
   try {
-    const r = await pool.query(sql, [limit]);
+    const r = await pool.query(sql, params);
     const rows = (r.rows || []).map((x) => ({
       url: String(x.url),
       title: String(x.title),
@@ -206,7 +220,7 @@ LIMIT $1
       snippet: x.snippet ? String(x.snippet) : null,
       tickers: Array.isArray(x.tickers) ? x.tickers.map(String) : [],
     }));
-    res.json({ ok: true, count: rows.length, rows });
+    res.json({ ok: true, count: rows.length, rows, nextCursor: rows.length ? { beforePublishedAt: rows[rows.length - 1].published_at, beforeUrl: rows[rows.length - 1].url } : null });
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -218,7 +232,22 @@ app.get('/news/by-ticker', async (req, res) => {
 
   const ticker = String(req.query.ticker || '').trim().toUpperCase();
   const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
+  const beforePublishedAt = req.query.beforePublishedAt ? String(req.query.beforePublishedAt) : null;
+  const beforeUrl = req.query.beforeUrl ? String(req.query.beforeUrl) : null;
+
   if (!ticker) return res.status(400).json({ ok: false, error: 'missing ticker' });
+
+  const params = [ticker, limit];
+  let where = "WHERE s.ticker = $1 AND a.fetch_status = 'fetched'";
+
+  if (beforePublishedAt && beforeUrl) {
+    params.push(beforePublishedAt);
+    params.push(beforeUrl);
+    where += ` AND (a.published_at, a.url) < ($${params.length - 1}, $${params.length})`;
+  } else if (beforePublishedAt) {
+    params.push(beforePublishedAt);
+    where += ` AND a.published_at < $${params.length}`;
+  }
 
   const sql = `
 SELECT
@@ -229,13 +258,13 @@ SELECT
   left(coalesce(a.text,''), 220) as snippet
 FROM article_symbols s
 JOIN articles a ON a.url = s.article_url
-WHERE s.ticker = $1 AND a.fetch_status = 'fetched'
-ORDER BY a.published_at DESC NULLS LAST
+${where}
+ORDER BY a.published_at DESC NULLS LAST, a.url DESC
 LIMIT $2
   `.trim();
 
   try {
-    const r = await pool.query(sql, [ticker, limit]);
+    const r = await pool.query(sql, params);
     const rows = (r.rows || []).map((x) => ({
       url: String(x.url),
       title: String(x.title),
@@ -244,7 +273,7 @@ LIMIT $2
       snippet: x.snippet ? String(x.snippet) : null,
       tickers: [ticker],
     }));
-    res.json({ ok: true, ticker, count: rows.length, rows });
+    res.json({ ok: true, ticker, count: rows.length, rows, nextCursor: rows.length ? { beforePublishedAt: rows[rows.length - 1].published_at, beforeUrl: rows[rows.length - 1].url } : null });
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false, error: String(e?.message || e) });

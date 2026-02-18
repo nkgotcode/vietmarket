@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchNewsLatest, NewsRow } from '@/lib/historyApi';
+import { fetchNewsLatest, NewsCursor, NewsRow } from '@/lib/historyApi';
 
 function fmtTime(s: string | null | undefined) {
   if (!s) return '—';
@@ -16,6 +16,7 @@ function fmtTime(s: string | null | undefined) {
 
 export default function HeadlinesClient() {
   const [rows, setRows] = useState<NewsRow[]>([]);
+  const [cursor, setCursor] = useState<NewsCursor | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -28,6 +29,7 @@ export default function HeadlinesClient() {
         const r = await fetchNewsLatest({ limit: 30 });
         if (cancelled) return;
         setRows(r.rows);
+        setCursor(r.nextCursor);
       } catch (e: unknown) {
         if (cancelled) return;
         const msg = e instanceof Error ? e.message : String(e);
@@ -73,6 +75,30 @@ export default function HeadlinesClient() {
           ))}
           {!loading && rows.length === 0 ? <li style={{ color: '#666' }}>No articles.</li> : null}
         </ul>
+
+        <div style={{ marginTop: 10 }}>
+          <button
+            onClick={async () => {
+              if (!cursor) return;
+              setLoading(true);
+              setErr(null);
+              try {
+                const r = await fetchNewsLatest({ limit: 30, cursor });
+                setRows((prev) => [...prev, ...r.rows]);
+                setCursor(r.nextCursor);
+              } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : String(e);
+                setErr(msg);
+              } finally {
+                setLoading(false);
+              }
+            }}
+            disabled={loading || !cursor}
+            style={{ padding: '6px 10px', borderRadius: 10, border: '1px solid #ddd', background: 'white', cursor: loading || !cursor ? 'not-allowed' : 'pointer' }}
+          >
+            {cursor ? (loading ? 'Loading…' : 'Load more') : 'No more'}
+          </button>
+        </div>
       </div>
     </section>
   );
