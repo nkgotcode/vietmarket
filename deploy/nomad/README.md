@@ -37,8 +37,12 @@ Notes:
     - `fundamentals` (latest-per-(ticker,metric))
     - `technical_indicators` (latest close/sma20/sma50/ema20 by ticker/tf)
     - `indicators` (normalized KV indicator rows)
-    - `market_stats` (candles/CA summary metrics)
+    - `market_stats` (candles/CA summary metrics + KPIs)
   - Script: `packages/ingest/vn/derived_market_sync_pg.py`
+  - KPI metrics now written into `market_stats` include:
+    - coverage (`candles_eligible_total/with_candles/missing`, `candles_coverage_pct`)
+    - per-tf rows/tickers (`candles_1d_*`, `candles_1h_*`, `candles_15m_*`)
+    - frontier diagnosis (`candles_frontier_status`, `candles_frontier_lag_ms`)
 
 ### News
 - `jobs/vietmarket-news.nomad.hcl` — Vietstock archive → Convex sync
