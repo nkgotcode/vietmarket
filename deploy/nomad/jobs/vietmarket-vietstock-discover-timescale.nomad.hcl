@@ -16,11 +16,6 @@ job "vietmarket-vietstock-discover-timescale" {
   group "discover" {
     count = 1
 
-    constraint {
-      attribute = "${node.unique.name}"
-      value     = "optiplex"
-    }
-
     task "discover" {
       driver = "docker"
 
@@ -41,8 +36,8 @@ job "vietmarket-vietstock-discover-timescale" {
       }
 
       resources {
-        cpu    = 400
-        memory = 512
+        cpu    = 300
+        memory = 256
       }
     }
   }

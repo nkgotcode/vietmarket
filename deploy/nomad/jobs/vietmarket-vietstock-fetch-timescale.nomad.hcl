@@ -16,11 +16,6 @@ job "vietmarket-vietstock-fetch-timescale" {
   group "fetch" {
     count = 1
 
-    constraint {
-      attribute = "${node.unique.name}"
-      value     = "optiplex"
-    }
-
     task "fetch" {
       driver = "docker"
 
@@ -39,8 +34,8 @@ job "vietmarket-vietstock-fetch-timescale" {
       }
 
       resources {
-        cpu    = 500
-        memory = 768
+        cpu    = 300
+        memory = 256
       }
     }
   }
