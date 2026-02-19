@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 import requests
+import psycopg2
 
 
 def convex_url() -> str:
@@ -36,6 +37,30 @@ def convex_action(path: str, args: dict, timeout_s: int = 90) -> dict:
     r = requests.post(url, json={'path': path, 'args': args}, timeout=timeout_s)
     r.raise_for_status()
     return r.json()
+
+
+def pg_url() -> str:
+    return os.environ.get(
+        'PG_URL',
+        'postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable',
+    )
+
+
+def mark_pg_convex_link(url: str, text_file_id: str | None, text_sha256: str | None) -> None:
+    if not text_file_id and not text_sha256:
+        return
+    with psycopg2.connect(pg_url()) as pg:
+        with pg.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE articles
+                   SET convex_text_file_id = COALESCE(%s, convex_text_file_id),
+                       convex_text_sha256  = COALESCE(%s, convex_text_sha256),
+                       ingested_at = now()
+                 WHERE url = %s
+                """,
+                (text_file_id, text_sha256, url),
+            )
 
 
 @dataclass
@@ -116,6 +141,7 @@ def main(argv: list[str]) -> int:
         return 0
 
     synced = 0
+    pg_marked = 0
     last_discovered = since
 
     for art in batch:
@@ -139,7 +165,13 @@ def main(argv: list[str]) -> int:
         payload = {k: v for k, v in payload.items() if v is not None}
 
         out = convex_action('articles:upsertWithText', payload, timeout_s=120)
-        _ = out.get('value', out)
+        value = out.get('value', out)
+
+        text_file_id = value.get('textFileId') if isinstance(value, dict) else None
+        text_sha256 = value.get('textSha256') if isinstance(value, dict) else None
+        if text_file_id or text_sha256:
+            mark_pg_convex_link(art.url, text_file_id, text_sha256)
+            pg_marked += 1
 
         synced += 1
         last_discovered = art.discovered_at or last_discovered
@@ -148,9 +180,10 @@ def main(argv: list[str]) -> int:
         'since': last_discovered,
         'lastRun': cursor.get('lastRun'),
         'syncedTotalLastRun': synced,
+        'pgMarkedLastRun': pg_marked,
     })
 
-    print(json.dumps({'ok': True, 'synced': synced, 'since': since, 'nextSince': last_discovered}, indent=2))
+    print(json.dumps({'ok': True, 'synced': synced, 'pgMarked': pg_marked, 'since': since, 'nextSince': last_discovered}, indent=2))
     return 0
 
 

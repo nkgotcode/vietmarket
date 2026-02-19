@@ -219,6 +219,13 @@ WITH c AS (
     count(*) FILTER (WHERE status = 'done' AND updated_at >= now() - interval '1 hour')::double precision AS queue_done_1h,
     count(*) FILTER (WHERE status = 'done' AND updated_at >= now() - interval '24 hour')::double precision AS queue_done_24h
   FROM candle_repair_queue
+), a AS (
+  SELECT
+    count(*)::double precision AS articles_total,
+    count(*) FILTER (WHERE fetch_status = 'fetched')::double precision AS articles_fetched_total,
+    count(*) FILTER (WHERE convex_text_file_id IS NOT NULL AND convex_text_file_id <> '')::double precision AS articles_convex_linked_total,
+    count(*) FILTER (WHERE convex_text_sha256 IS NOT NULL AND convex_text_sha256 <> '')::double precision AS articles_convex_sha_total
+  FROM articles
 ), diag AS (
   SELECT
     CASE
@@ -258,6 +265,13 @@ SELECT * FROM (
   UNION ALL SELECT 'repair_queue_queued_24h', q.queue_queued_24h, NULL::text, c.max_ts, now() FROM q,c
   UNION ALL SELECT 'repair_queue_done_1h', q.queue_done_1h, NULL::text, c.max_ts, now() FROM q,c
   UNION ALL SELECT 'repair_queue_done_24h', q.queue_done_24h, NULL::text, c.max_ts, now() FROM q,c
+
+  UNION ALL SELECT 'articles_total', a.articles_total, NULL::text, c.max_ts, now() FROM a,c
+  UNION ALL SELECT 'articles_fetched_total', a.articles_fetched_total, NULL::text, c.max_ts, now() FROM a,c
+  UNION ALL SELECT 'articles_convex_linked_total', a.articles_convex_linked_total, NULL::text, c.max_ts, now() FROM a,c
+  UNION ALL SELECT 'articles_convex_sha_total', a.articles_convex_sha_total, NULL::text, c.max_ts, now() FROM a,c
+  UNION ALL SELECT 'articles_fetch_coverage_pct', CASE WHEN a.articles_total > 0 THEN (a.articles_fetched_total/a.articles_total)*100.0 ELSE NULL END, NULL::text, c.max_ts, now() FROM a,c
+  UNION ALL SELECT 'articles_convex_link_coverage_pct', CASE WHEN a.articles_fetched_total > 0 THEN (a.articles_convex_linked_total/a.articles_fetched_total)*100.0 ELSE NULL END, NULL::text, c.max_ts, now() FROM a,c
 
   UNION ALL SELECT 'ca_total_rows', ca.ca_rows, NULL::text, (SELECT max_ts FROM c), now() FROM ca
   UNION ALL SELECT 'ca_ex_nonnull', ca.ca_ex, NULL::text, (SELECT max_ts FROM c), now() FROM ca

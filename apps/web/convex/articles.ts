@@ -48,7 +48,14 @@ export const upsertWithText = action({
         textFileId: existing.textFileId ?? undefined,
         textSha256,
       });
-      return { ok: true, updated: true, stored: false, url: args.url };
+      return {
+        ok: true,
+        updated: true,
+        stored: false,
+        url: args.url,
+        textFileId: existing.textFileId ?? null,
+        textSha256,
+      };
     }
 
     // Store as a file in Convex storage.
@@ -67,7 +74,14 @@ export const upsertWithText = action({
       textSha256,
     });
 
-    return { ok: true, updated: true, stored: true, url: args.url };
+    return {
+      ok: true,
+      updated: true,
+      stored: true,
+      url: args.url,
+      textFileId: fileId,
+      textSha256,
+    };
   },
 });
 

@@ -14,7 +14,7 @@ Env (optional overrides):
 - OPTIPLEX_HOST (default: itsnk@100.83.150.39)
 - NOMAD_ADDR (default: http://100.83.150.39:4646)
 - PG_URL (default: postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable)
-- SIMPLIZE_HEALTH_URL (default: http://127.0.0.1:18991/health)
+- SIMPLIZE_HEALTH_URL (default: "" disabled)
 - HISTORY_API_HEALTH_URL (default: "" disabled)
 
 Notes:
@@ -38,7 +38,7 @@ PG_URL = os.environ.get(
     "PG_URL",
     "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable",
 )
-SIMPLIZE_HEALTH_URL = os.environ.get("SIMPLIZE_HEALTH_URL", "http://127.0.0.1:18991/health")
+SIMPLIZE_HEALTH_URL = os.environ.get("SIMPLIZE_HEALTH_URL", "").strip()
 HISTORY_API_HEALTH_URL = os.environ.get("HISTORY_API_HEALTH_URL", "").strip()
 
 KEY_JOBS = [
@@ -128,12 +128,19 @@ def http_ok(url: str, timeout_s: int = 4) -> tuple[bool, str]:
 def get_endpoint_statuses() -> dict:
     out: dict[str, dict] = {}
 
-    ok, detail = http_ok(SIMPLIZE_HEALTH_URL)
-    out["simplize_api"] = {
-        "url": SIMPLIZE_HEALTH_URL,
-        "ok": ok,
-        "detail": detail,
-    }
+    if SIMPLIZE_HEALTH_URL:
+        ok, detail = http_ok(SIMPLIZE_HEALTH_URL)
+        out["simplize_api"] = {
+            "url": SIMPLIZE_HEALTH_URL,
+            "ok": ok,
+            "detail": detail,
+        }
+    else:
+        out["simplize_api"] = {
+            "url": None,
+            "ok": None,
+            "detail": "disabled (set SIMPLIZE_HEALTH_URL to explicit target)",
+        }
 
     if HISTORY_API_HEALTH_URL:
         ok, detail = http_ok(HISTORY_API_HEALTH_URL)
