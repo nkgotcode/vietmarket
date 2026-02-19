@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
+  "scripts": {
+    "test:contract": "node --test tests/v1_contract.test.mjs"
+  },
   "dependencies": {
     "express": "^4.19.2",
     "pg": "^8.13.1"

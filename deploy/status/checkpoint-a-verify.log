@@ -1,0 +1,10 @@
+healthz: PASS
+analytics_overview: PASS status=200 envelope_ok=true
+context_vcb: PASS status=200 envelope_ok=true
+sentiment_overview: PASS status=200 envelope_ok=true
+sentiment_vcb: PASS status=200 envelope_ok=true
+overall_health: PASS status=200 envelope_ok=true
+unauthorized_contract: PASS
+invalid_ticker_contract: PASS
+invalid_window_contract: PASS
+summary: pass=8 fail=0

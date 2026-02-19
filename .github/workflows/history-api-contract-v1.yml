@@ -1,0 +1,61 @@
+name: History API v1 Contract Tests
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "deploy/history-api/**"
+      - "deploy/timescaledb/schema.sql"
+      - ".github/workflows/history-api-contract-v1.yml"
+  pull_request:
+    paths:
+      - "deploy/history-api/**"
+      - "deploy/timescaledb/schema.sql"
+      - ".github/workflows/history-api-contract-v1.yml"
+  workflow_dispatch:
+
+jobs:
+  contract-v1:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install history-api deps
+        working-directory: deploy/history-api
+        run: npm ci
+
+      - name: Bootstrap schema + seed
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql "postgres://postgres:postgres@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -f deploy/history-api/tests/seed_contract.sql
+
+      - name: Run v1 contract tests
+        working-directory: deploy/history-api
+        env:
+          CONTRACT_BASE_URL: http://127.0.0.1:18787
+          CONTRACT_API_KEY: test-key
+          CONTRACT_PG_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: npm run test:contract
