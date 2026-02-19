@@ -3,7 +3,7 @@ job "vietmarket-news" {
   type        = "batch"
 
   periodic {
-    crons            = ["*/5 * * * *"]
+    crons            = ["4-59/5 * * * *"]
     prohibit_overlap = true
     time_zone        = "Asia/Ho_Chi_Minh"
   }

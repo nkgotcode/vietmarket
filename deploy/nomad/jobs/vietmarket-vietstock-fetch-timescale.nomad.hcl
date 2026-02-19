@@ -3,7 +3,7 @@ job "vietmarket-vietstock-fetch-timescale" {
   type        = "batch"
 
   periodic {
-    crons            = ["*/10 * * * *"]
+    crons            = ["7-59/10 * * * *"]
     prohibit_overlap = true
     time_zone        = "Asia/Ho_Chi_Minh"
   }
