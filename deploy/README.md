@@ -31,8 +31,6 @@ Located in: `deploy/nomad/jobs/`
 - Candles:
   - `vietmarket-candles-latest.nomad.hcl` (periodic)
   - `vietmarket-candles-backfill.nomad.hcl` (periodic; currently 1D only)
-- News:
-  - `vietmarket-news.nomad.hcl` (Vietstock → Convex)
 - HA DB:
   - `etcd.nomad.hcl` (3-node DCS: optiplex + epyc + mac mini)
   - `timescaledb-ha.nomad.hcl` (2-node DB: optiplex + epyc)

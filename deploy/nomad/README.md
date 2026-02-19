@@ -45,7 +45,7 @@ Notes:
     - frontier diagnosis (`candles_frontier_status`, `candles_frontier_lag_ms`)
 
 ### News
-- `jobs/vietmarket-news.nomad.hcl` — Vietstock archive → Convex sync
+- Convex sync job removed (Timescale-only operation).
 
 ### History DB (Timescale HA)
 See: `HA_TIMESCALE_RUNBOOK.md`
@@ -56,7 +56,6 @@ See: `HA_TIMESCALE_RUNBOOK.md`
 
 ## Env / Config notes
 
-- Convex URL: `https://opulent-hummingbird-838.convex.cloud`
 - Mac mini should remain **client-only** (no server).
 - Prefer using **meta constraints** to target Mac mini (e.g. `meta.role=witness`).
 
