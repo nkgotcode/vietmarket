@@ -2,6 +2,7 @@ import Link from 'next/link';
 import MarketOverviewClient from './MarketOverviewClient';
 import HeadlinesClient from './HeadlinesClient';
 import AuthWidget from './AuthWidget';
+import V1OverviewClient from './V1OverviewClient';
 
 export default function AppHome() {
   return (
@@ -24,6 +25,7 @@ export default function AppHome() {
       </ul>
 
       <MarketOverviewClient />
+      <V1OverviewClient />
       <HeadlinesClient />
     </main>
   );

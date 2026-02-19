@@ -4,6 +4,7 @@ import SymbolHeadlinesClient from './SymbolHeadlinesClient';
 import FundamentalsClient from './FundamentalsClient';
 import CorporateActionsClient from './CorporateActionsClient';
 import AuthWidget from '../../AuthWidget';
+import SymbolV1IntelClient from './SymbolV1IntelClient';
 
 export default async function SymbolPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
@@ -24,6 +25,7 @@ export default async function SymbolPage({ params }: { params: Promise<{ ticker:
         <ChartClient ticker={t} />
       </div>
 
+      <SymbolV1IntelClient ticker={t} />
       <SymbolHeadlinesClient ticker={t} />
       <CorporateActionsClient ticker={t} />
       <FundamentalsClient ticker={t} />
