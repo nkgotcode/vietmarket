@@ -209,6 +209,16 @@ WITH c AS (
     count(*) FILTER (WHERE tf='1h')::double precision AS tf_1h_rows,
     count(*) FILTER (WHERE tf='15m')::double precision AS tf_15m_rows
   FROM candles
+), q AS (
+  SELECT
+    count(*) FILTER (WHERE status = 'queued')::double precision AS queue_queued,
+    count(*) FILTER (WHERE status = 'running')::double precision AS queue_running,
+    count(*) FILTER (WHERE status = 'done')::double precision AS queue_done,
+    count(*) FILTER (WHERE status = 'queued' AND created_at >= now() - interval '1 hour')::double precision AS queue_queued_1h,
+    count(*) FILTER (WHERE status = 'queued' AND created_at >= now() - interval '24 hour')::double precision AS queue_queued_24h,
+    count(*) FILTER (WHERE status = 'done' AND updated_at >= now() - interval '1 hour')::double precision AS queue_done_1h,
+    count(*) FILTER (WHERE status = 'done' AND updated_at >= now() - interval '24 hour')::double precision AS queue_done_24h
+  FROM candle_repair_queue
 ), diag AS (
   SELECT
     CASE
@@ -240,6 +250,14 @@ SELECT * FROM (
   UNION ALL SELECT 'candles_1d_rows', tf.tf_1d_rows, NULL::text, c.max_ts, now() FROM tf,c
   UNION ALL SELECT 'candles_1h_rows', tf.tf_1h_rows, NULL::text, c.max_ts, now() FROM tf,c
   UNION ALL SELECT 'candles_15m_rows', tf.tf_15m_rows, NULL::text, c.max_ts, now() FROM tf,c
+
+  UNION ALL SELECT 'repair_queue_queued', q.queue_queued, NULL::text, c.max_ts, now() FROM q,c
+  UNION ALL SELECT 'repair_queue_running', q.queue_running, NULL::text, c.max_ts, now() FROM q,c
+  UNION ALL SELECT 'repair_queue_done', q.queue_done, NULL::text, c.max_ts, now() FROM q,c
+  UNION ALL SELECT 'repair_queue_queued_1h', q.queue_queued_1h, NULL::text, c.max_ts, now() FROM q,c
+  UNION ALL SELECT 'repair_queue_queued_24h', q.queue_queued_24h, NULL::text, c.max_ts, now() FROM q,c
+  UNION ALL SELECT 'repair_queue_done_1h', q.queue_done_1h, NULL::text, c.max_ts, now() FROM q,c
+  UNION ALL SELECT 'repair_queue_done_24h', q.queue_done_24h, NULL::text, c.max_ts, now() FROM q,c
 
   UNION ALL SELECT 'ca_total_rows', ca.ca_rows, NULL::text, (SELECT max_ts FROM c), now() FROM ca
   UNION ALL SELECT 'ca_ex_nonnull', ca.ca_ex, NULL::text, (SELECT max_ts FROM c), now() FROM ca

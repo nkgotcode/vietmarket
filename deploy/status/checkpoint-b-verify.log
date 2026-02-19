@@ -1,0 +1,5 @@
+provider_probe_results= [('EMC', 'present', 561), ('TS4', 'present', 561), ('X77', 'present', 561)]
+all_hard_missing= False
+py_compile_log= True
+datefill_log= True
+queue_metrics_log= True
