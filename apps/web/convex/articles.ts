@@ -15,7 +15,7 @@ function sha256Hex(input: Uint8Array): Promise<string> {
   });
 }
 
-export const upsertWithText = action({
+export const upsertWithText: any = action({
   args: {
     url: v.string(),
     source: v.string(),
