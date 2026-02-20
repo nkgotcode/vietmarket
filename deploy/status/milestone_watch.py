@@ -38,8 +38,8 @@ PG_URL = os.environ.get(
     "PG_URL",
     "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable",
 )
-SIMPLIZE_HEALTH_URL = os.environ.get("SIMPLIZE_HEALTH_URL", "").strip()
-HISTORY_API_HEALTH_URL = os.environ.get("HISTORY_API_HEALTH_URL", "").strip()
+SIMPLIZE_HEALTH_URL = os.environ.get("SIMPLIZE_HEALTH_URL", "http://127.0.0.1:18991/health").strip()
+HISTORY_API_HEALTH_URL = os.environ.get("HISTORY_API_HEALTH_URL", "http://127.0.0.1:8787/healthz").strip()
 
 KEY_JOBS = [
     "etcd",
