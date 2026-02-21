@@ -146,7 +146,17 @@ Key finding:
 
 ---
 
-## 6) Troubleshooting quick map
+## 6) Monitoring/health conventions (important)
+
+- **History API health for consolidated cron** should be explicit and remote (Vultr Funnel URL), e.g.
+  - `HISTORY_API_HEALTH_URL=https://vultr.tail0e76b7.ts.net/healthz`
+- **Simplize API health for consolidated cron** should also be explicit, e.g.
+  - `SIMPLIZE_HEALTH_URL=http://127.0.0.1:18991/health`
+- Do not infer health from implicit localhost defaults in generic reporters.
+- Coverage should be computed against the **active eligible symbols universe**; index tickers (e.g. `VNINDEX`, `HNXINDEX`, `UPCOMINDEX`) should be reported as universe extras, not missing active coverage.
+- High `ingested_at` churn on old `ts` rows can be caused by idempotent upsert rewrites; treat as an incident only when it accompanies stale frontier progression or net-new stale expansion.
+
+## 7) Troubleshooting quick map
 
 ### History API health says `db_unreachable`
 
