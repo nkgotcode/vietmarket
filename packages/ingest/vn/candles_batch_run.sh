@@ -30,7 +30,7 @@ TFS="${TFS:-1d,1h,15m}"
 python3 - <<'PY'
 import json, os, subprocess, sys
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 root = Path(os.environ.get('VIETMARKET_ROOT', '.')).resolve()
 universe_file = Path(os.environ.get('UNIVERSE_FILE', str(root/'data/simplize/universe.latest.json')))
@@ -160,6 +160,52 @@ start_1h = os.environ.get('START_1H', '2000-01-01')
 start_15m = os.environ.get('START_15M', '2000-01-01')
 
 run_timeout = int(os.environ.get('RUN_TIMEOUT_SEC', '300'))
+smart_start_from_db = os.environ.get('SMART_START_FROM_DB', '0') in ('1','true','True','yes','YES')
+smart_overlap_1d = int(os.environ.get('SMART_OVERLAP_DAYS_1D', '7'))
+smart_overlap_1h = int(os.environ.get('SMART_OVERLAP_DAYS_1H', '3'))
+smart_overlap_15m = int(os.environ.get('SMART_OVERLAP_DAYS_15M', '2'))
+
+
+def _parse_ymd(s: str) -> datetime:
+    return datetime.strptime(s, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+
+
+def compute_smart_start(tf: str, base_start: str) -> str:
+    """Compute start date from DB frontier for selected tickers.
+
+    If enabled, uses max(ts) from candles for current selected tickers+tf,
+    then rewinds by a small overlap window to allow correction drift.
+    Falls back to base_start when no DB frontier exists.
+    """
+    if not smart_start_from_db or not os.environ.get('PG_URL') or not sel:
+        return base_start
+
+    overlap_days = smart_overlap_1d if tf == '1d' else smart_overlap_1h if tf == '1h' else smart_overlap_15m
+
+    try:
+        import psycopg2
+        with psycopg2.connect(os.environ['PG_URL']) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT max(ts)
+                    FROM candles
+                    WHERE tf=%s AND ticker = ANY(%s)
+                    """,
+                    (tf, sel),
+                )
+                row = cur.fetchone()
+                max_ts_ms = row[0] if row else None
+        if not max_ts_ms:
+            return base_start
+
+        max_dt = datetime.fromtimestamp(int(max_ts_ms) / 1000.0, tz=timezone.utc)
+        proposed = (max_dt - timedelta(days=max(0, overlap_days))).date().isoformat()
+        # never go earlier than configured baseline
+        return max(base_start, proposed)
+    except Exception:
+        return base_start
+
 
 def run(tf: str, start_date: str):
     cmd = [
@@ -185,9 +231,12 @@ def run(tf: str, start_date: str):
         sys.exit(p.returncode)
 
 for tf in [x.strip() for x in tfs.split(',') if x.strip()]:
-    if tf == '1d': run('1d', start_1d)
-    elif tf == '1h': run('1h', start_1h)
-    elif tf == '15m': run('15m', start_15m)
+    if tf == '1d':
+        run('1d', compute_smart_start('1d', start_1d))
+    elif tf == '1h':
+        run('1h', compute_smart_start('1h', start_1h))
+    elif tf == '15m':
+        run('15m', compute_smart_start('15m', start_15m))
     else:
         raise SystemExit(f'Unsupported tf: {tf}')
 

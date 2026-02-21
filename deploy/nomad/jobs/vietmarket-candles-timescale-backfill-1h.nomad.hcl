@@ -53,6 +53,11 @@ job "vietmarket-candles-timescale-backfill-1h" {
         RUN_TIMEOUT_SEC = "1800"
 
         CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
+
+        SMART_START_FROM_DB = "1"
+        SMART_OVERLAP_DAYS_1D  = "7"
+        SMART_OVERLAP_DAYS_1H  = "3"
+        SMART_OVERLAP_DAYS_15M = "2"
       }
 
       resources {
@@ -102,6 +107,11 @@ job "vietmarket-candles-timescale-backfill-1h" {
         RUN_TIMEOUT_SEC = "1800"
 
         CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
+
+        SMART_START_FROM_DB = "1"
+        SMART_OVERLAP_DAYS_1D  = "7"
+        SMART_OVERLAP_DAYS_1H  = "3"
+        SMART_OVERLAP_DAYS_15M = "2"
       }
 
       resources {

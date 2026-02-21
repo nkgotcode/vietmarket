@@ -24,6 +24,10 @@ This folder documents Nomad usage for VietMarket ingestion + HA DB.
 ### Candles (periodic batch)
 - `jobs/vietmarket-candles-timescale-latest.nomad.hcl` — near-real-time refresh into Timescale (multi-tf windowed)
 - `jobs/vietmarket-candles-timescale-backfill.nomad.hcl` — **1D** full-history backfill into Timescale (cursor persisted)
+
+Backfill stop/limit policy (important):
+- When active-universe debt is near-zero (e.g. only a tiny set of missing tf symbols), stop periodic full-history backfill jobs (`...-backfill`, `...-backfill-1h`, `...-backfill-15m`) to avoid old-ts rewrite churn.
+- Keep `...-latest` running for freshness, and use targeted debt catch-up runs only for remaining missing symbols.
 - `jobs/vietmarket-candles-timescale-backfill-1h.nomad.hcl` — **1H** intraday backfill (attempt full history; provider-limited)
 - `jobs/vietmarket-candles-timescale-backfill-15m.nomad.hcl` — **15m** intraday backfill (attempt full history; provider-limited)
 
