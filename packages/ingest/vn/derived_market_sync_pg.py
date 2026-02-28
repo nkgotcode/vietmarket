@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and sync derived market/fundamental tables in Timescale/Postgres.
+"""Build and sync derived market/news/fundamental tables in Timescale/Postgres.
 
 Creates and maintains:
 - market_stats
@@ -7,19 +7,24 @@ Creates and maintains:
 - fundamentals
 - technical_indicators
 - indicators
+- article_symbols (news ↔ ticker links)
 
 Sources:
 - candles
 - fi_latest
+- articles
+- symbols
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 import psycopg2
+from psycopg2.extras import execute_values
 
 
 def pg_url() -> str:
@@ -73,6 +78,14 @@ CREATE TABLE IF NOT EXISTS technical_indicators (
   sma20 double precision,
   sma50 double precision,
   ema20 double precision,
+  rsi14 double precision,
+  macd double precision,
+  macd_signal double precision,
+  macd_hist double precision,
+  atr14 double precision,
+  bb_mid double precision,
+  bb_upper double precision,
+  bb_lower double precision,
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (ticker, tf)
 );
@@ -86,6 +99,18 @@ CREATE TABLE IF NOT EXISTS indicators (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (ticker, tf, indicator)
 );
+"""
+
+
+DDL_TECHNICAL_ADD_COLS = """
+ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS rsi14 double precision;
+ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS macd double precision;
+ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS macd_signal double precision;
+ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS macd_hist double precision;
+ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS atr14 double precision;
+ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS bb_mid double precision;
+ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS bb_upper double precision;
+ALTER TABLE technical_indicators ADD COLUMN IF NOT EXISTS bb_lower double precision;
 """
 
 
@@ -124,39 +149,112 @@ ON CONFLICT (ticker, metric) DO UPDATE SET
 
 
 SQL_TECHNICAL = """
-WITH base AS (
-  SELECT ticker, tf, ts, c,
-         row_number() OVER (PARTITION BY ticker, tf ORDER BY ts DESC) AS rn_desc,
-         avg(c) OVER (PARTITION BY ticker, tf ORDER BY ts ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS sma20,
-         avg(c) OVER (PARTITION BY ticker, tf ORDER BY ts ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS sma50,
-         2.0/(20+1) AS alpha
+WITH pairs AS (
+  SELECT DISTINCT ticker, tf
   FROM candles
   WHERE tf IN ('15m','1h','1d')
-), latest AS (
-  SELECT ticker, tf, ts AS asof_ts, c AS close, sma20, sma50
+), sampled AS (
+  SELECT p.ticker, p.tf, x.ts, x.o, x.h, x.l, x.c
+  FROM pairs p
+  CROSS JOIN LATERAL (
+    SELECT ts, o, h, l, c
+    FROM candles c
+    WHERE c.ticker = p.ticker AND c.tf = p.tf
+    ORDER BY ts DESC
+    LIMIT 140
+  ) x
+), base0 AS (
+  SELECT ticker, tf, ts, o, h, l, c,
+         row_number() OVER (PARTITION BY ticker, tf ORDER BY ts DESC) AS rn_desc,
+         lag(c) OVER (PARTITION BY ticker, tf ORDER BY ts) AS prev_close
+  FROM sampled
+), base AS (
+  SELECT
+    ticker, tf, ts, c, rn_desc, prev_close,
+    avg(c) OVER (PARTITION BY ticker, tf ORDER BY ts ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS sma20,
+    avg(c) OVER (PARTITION BY ticker, tf ORDER BY ts ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS sma50,
+    avg(c) OVER (PARTITION BY ticker, tf ORDER BY ts ROWS BETWEEN 11 PRECEDING AND CURRENT ROW) AS sma12,
+    avg(c) OVER (PARTITION BY ticker, tf ORDER BY ts ROWS BETWEEN 25 PRECEDING AND CURRENT ROW) AS sma26,
+    stddev_samp(c) OVER (PARTITION BY ticker, tf ORDER BY ts ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS std20,
+
+    avg(GREATEST(c - COALESCE(prev_close, c), 0.0)) OVER (PARTITION BY ticker, tf ORDER BY ts ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS avg_gain14,
+    avg(ABS(LEAST(c - COALESCE(prev_close, c), 0.0))) OVER (PARTITION BY ticker, tf ORDER BY ts ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS avg_loss14,
+    avg(GREATEST(h - l, ABS(h - COALESCE(prev_close, c)), ABS(l - COALESCE(prev_close, c)))) OVER (PARTITION BY ticker, tf ORDER BY ts ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS atr14,
+
+    2.0/(20+1) AS alpha20,
+    2.0/(12+1) AS alpha12,
+    2.0/(26+1) AS alpha26
+  FROM base0
+), enriched AS (
+  SELECT
+    ticker, tf, ts, rn_desc,
+    c AS close,
+    sma20, sma50,
+    (c * alpha20 + COALESCE(sma20, c) * (1-alpha20)) AS ema20,
+    CASE WHEN avg_loss14 IS NULL OR avg_loss14 = 0 THEN NULL
+         ELSE 100.0 - (100.0 / (1.0 + (avg_gain14 / avg_loss14))) END AS rsi14,
+    (c * alpha12 + COALESCE(sma12, c) * (1-alpha12))
+      - (c * alpha26 + COALESCE(sma26, c) * (1-alpha26)) AS macd,
+    atr14,
+    sma20 AS bb_mid,
+    (sma20 + 2.0 * std20) AS bb_upper,
+    (sma20 - 2.0 * std20) AS bb_lower
   FROM base
+), macd_sig AS (
+  SELECT
+    ticker, tf, ts, rn_desc,
+    close, sma20, sma50, ema20,
+    rsi14, macd,
+    avg(macd) OVER (PARTITION BY ticker, tf ORDER BY ts ROWS BETWEEN 8 PRECEDING AND CURRENT ROW) AS macd_signal,
+    atr14, bb_mid, bb_upper, bb_lower
+  FROM enriched
+), latest AS (
+  SELECT
+    ticker, tf, ts AS asof_ts,
+    close, sma20, sma50, ema20,
+    rsi14, macd, macd_signal, (macd - macd_signal) AS macd_hist,
+    atr14, bb_mid, bb_upper, bb_lower
+  FROM macd_sig
   WHERE rn_desc = 1
 )
-INSERT INTO technical_indicators (ticker, tf, asof_ts, close, sma20, sma50, ema20, updated_at)
-SELECT ticker, tf, asof_ts, close, sma20, sma50,
-       (close * alpha + COALESCE(sma20, close) * (1-alpha)) AS ema20,
-       now()
-FROM (
-  SELECT l.*, 2.0/(20+1) AS alpha FROM latest l
-) s
+INSERT INTO technical_indicators (
+  ticker, tf, asof_ts,
+  close, sma20, sma50, ema20,
+  rsi14, macd, macd_signal, macd_hist,
+  atr14, bb_mid, bb_upper, bb_lower,
+  updated_at
+)
+SELECT
+  ticker, tf, asof_ts,
+  close, sma20, sma50, ema20,
+  rsi14, macd, macd_signal, macd_hist,
+  atr14, bb_mid, bb_upper, bb_lower,
+  now()
+FROM latest
 ON CONFLICT (ticker, tf) DO UPDATE SET
   asof_ts = EXCLUDED.asof_ts,
   close = EXCLUDED.close,
   sma20 = EXCLUDED.sma20,
   sma50 = EXCLUDED.sma50,
   ema20 = EXCLUDED.ema20,
+  rsi14 = EXCLUDED.rsi14,
+  macd = EXCLUDED.macd,
+  macd_signal = EXCLUDED.macd_signal,
+  macd_hist = EXCLUDED.macd_hist,
+  atr14 = EXCLUDED.atr14,
+  bb_mid = EXCLUDED.bb_mid,
+  bb_upper = EXCLUDED.bb_upper,
+  bb_lower = EXCLUDED.bb_lower,
   updated_at = now();
 """
 
 
 SQL_INDICATORS = """
 WITH src AS (
-  SELECT ticker, tf, asof_ts, close, sma20, sma50, ema20
+  SELECT ticker, tf, asof_ts,
+         close, sma20, sma50, ema20,
+         rsi14, macd, macd_signal, macd_hist,
+         atr14, bb_mid, bb_upper, bb_lower
   FROM technical_indicators
 )
 INSERT INTO indicators (ticker, tf, indicator, value, asof_ts, updated_at)
@@ -167,7 +265,15 @@ CROSS JOIN LATERAL (
     ('close', close),
     ('sma20', sma20),
     ('sma50', sma50),
-    ('ema20', ema20)
+    ('ema20', ema20),
+    ('rsi14', rsi14),
+    ('macd', macd),
+    ('macd_signal', macd_signal),
+    ('macd_hist', macd_hist),
+    ('atr14', atr14),
+    ('bb_mid', bb_mid),
+    ('bb_upper', bb_upper),
+    ('bb_lower', bb_lower)
 ) v(indicator, value)
 ON CONFLICT (ticker, tf, indicator) DO UPDATE SET
   value = EXCLUDED.value,
@@ -226,6 +332,9 @@ WITH c AS (
     count(*) FILTER (WHERE convex_text_file_id IS NOT NULL AND convex_text_file_id <> '')::double precision AS articles_convex_linked_total,
     count(*) FILTER (WHERE convex_text_sha256 IS NOT NULL AND convex_text_sha256 <> '')::double precision AS articles_convex_sha_total
   FROM articles
+), asy AS (
+  SELECT count(*)::double precision AS article_symbols_rows
+  FROM article_symbols
 ), diag AS (
   SELECT
     CASE
@@ -272,6 +381,7 @@ SELECT * FROM (
   UNION ALL SELECT 'articles_convex_sha_total', a.articles_convex_sha_total, NULL::text, c.max_ts, now() FROM a,c
   UNION ALL SELECT 'articles_fetch_coverage_pct', CASE WHEN a.articles_total > 0 THEN (a.articles_fetched_total/a.articles_total)*100.0 ELSE NULL END, NULL::text, c.max_ts, now() FROM a,c
   UNION ALL SELECT 'articles_convex_link_coverage_pct', CASE WHEN a.articles_fetched_total > 0 THEN (a.articles_convex_linked_total/a.articles_fetched_total)*100.0 ELSE NULL END, NULL::text, c.max_ts, now() FROM a,c
+  UNION ALL SELECT 'article_symbols_rows', asy.article_symbols_rows, NULL::text, c.max_ts, now() FROM asy,c
 
   UNION ALL SELECT 'ca_total_rows', ca.ca_rows, NULL::text, (SELECT max_ts FROM c), now() FROM ca
   UNION ALL SELECT 'ca_ex_nonnull', ca.ca_ex, NULL::text, (SELECT max_ts FROM c), now() FROM ca
@@ -286,19 +396,135 @@ ON CONFLICT (metric) DO UPDATE SET
 """
 
 
+STOPWORDS = {
+    "ETF", "USD", "VND", "VNINDEX", "HNX", "HOSE", "UPCOM", "CTCP", "VNI",
+}
+
+RX_PAREN = re.compile(r"\(([A-Z0-9]{2,5})\)")
+RX_EXCH_PAREN = re.compile(r"\b([A-Z0-9]{2,5})\s*\((HOSE|HNX|UPCOM)\)\b")
+RX_EXCH_COLON = re.compile(r"\b(HOSE|HNX|UPCOM)\s*[:\-]\s*([A-Z0-9]{2,5})\b")
+RX_KEYWORD = re.compile(r"(?:CỔ\s*PHIẾU|MÃ\s*(?:CK\s*)?|MÃ\s*CHỨNG\s*KHOÁN\s*)([A-Z0-9]{2,5})")
+RX_TOKEN = re.compile(r"\b([A-Z0-9]{2,5})\b")
+
+
+def _valid_ticker(tk: str, known: set[str]) -> bool:
+    return bool(re.match(r"^[A-Z0-9]{2,5}$", tk)) and tk in known and tk not in STOPWORDS
+
+
+def _add_hit(hits: dict[str, tuple[float, str]], ticker: str, confidence: float, method: str):
+    prev = hits.get(ticker)
+    if prev is None or confidence > prev[0]:
+        hits[ticker] = (confidence, method)
+
+
+def link_symbols(title: str | None, text: str | None, known: set[str]) -> list[tuple[str, float, str]]:
+    title_up = (title or "").upper()
+    body_up = (text or "").upper()
+    body_up = body_up[:8000]
+    hits: dict[str, tuple[float, str]] = {}
+
+    for m in RX_PAREN.finditer(title_up):
+        tk = m.group(1)
+        if _valid_ticker(tk, known):
+            _add_hit(hits, tk, 0.95, "title_paren")
+
+    for m in RX_EXCH_PAREN.finditer(title_up):
+        tk = m.group(1)
+        if _valid_ticker(tk, known):
+            _add_hit(hits, tk, 0.92, "title_exchange_paren")
+
+    for m in RX_EXCH_COLON.finditer(title_up):
+        tk = m.group(2)
+        if _valid_ticker(tk, known):
+            _add_hit(hits, tk, 0.92, "title_exchange_colon")
+
+    for m in RX_KEYWORD.finditer(title_up + " " + body_up):
+        tk = m.group(1)
+        if _valid_ticker(tk, known):
+            _add_hit(hits, tk, 0.90, "keyword")
+
+    # fallback token pass on title only to reduce false positives
+    for m in RX_TOKEN.finditer(title_up):
+        tk = m.group(1)
+        if _valid_ticker(tk, known):
+            _add_hit(hits, tk, 0.60, "title_token")
+
+    return [(tk, c, method) for tk, (c, method) in sorted(hits.items(), key=lambda x: (-x[1][0], x[0]))]
+
+
+def sync_article_symbols(cur, *, batch_size: int = 1000) -> dict:
+    cur.execute("SELECT ticker FROM symbols WHERE coalesce(active,true)=true")
+    known = {r[0] for r in cur.fetchall() if r[0]}
+
+    cur.execute(
+        """
+        SELECT url, title, text
+        FROM articles
+        WHERE fetch_status='fetched'
+        ORDER BY discovered_at DESC NULLS LAST, ingested_at DESC NULLS LAST
+        LIMIT %s
+        """,
+        (int(os.environ.get("ARTICLE_SYMBOLS_BACKFILL_LIMIT", "50000")),),
+    )
+    rows = cur.fetchall()
+
+    payload: list[tuple[str, str, float, str]] = []
+    article_count = 0
+    linked_count = 0
+    for url, title, text in rows:
+        article_count += 1
+        links = link_symbols(title, text, known)
+        if not links:
+            continue
+        linked_count += 1
+        for tk, conf, method in links:
+            payload.append((url, tk, conf, method))
+
+    if payload:
+        execute_values(
+            cur,
+            """
+            INSERT INTO article_symbols (article_url, ticker, confidence, method)
+            VALUES %s
+            ON CONFLICT (article_url, ticker) DO UPDATE SET
+              confidence = GREATEST(article_symbols.confidence, EXCLUDED.confidence),
+              method = CASE
+                WHEN EXCLUDED.confidence >= article_symbols.confidence THEN EXCLUDED.method
+                ELSE article_symbols.method
+              END
+            """,
+            payload,
+            page_size=batch_size,
+        )
+
+    return {
+        "article_rows_scanned": article_count,
+        "articles_with_links": linked_count,
+        "article_symbol_upserts": len(payload),
+    }
+
+
 def main() -> int:
     out = {"ok": True, "at": now_iso()}
     with psycopg2.connect(pg_url()) as pg:
         with pg.cursor() as cur:
             cur.execute(DDL)
+            cur.execute(DDL_TECHNICAL_ADD_COLS)
+
             cur.execute(SQL_FINANCIALS)
             out["financials_sync"] = cur.rowcount
+
             cur.execute(SQL_FUNDAMENTALS)
             out["fundamentals_sync"] = cur.rowcount
+
             cur.execute(SQL_TECHNICAL)
             out["technical_sync"] = cur.rowcount
+
             cur.execute(SQL_INDICATORS)
             out["indicators_sync"] = cur.rowcount
+
+            out.update(sync_article_symbols(cur))
+
             cur.execute(SQL_MARKET_STATS)
             out["market_stats_sync"] = cur.rowcount
 
@@ -310,6 +536,8 @@ def main() -> int:
             out["technical_indicators_rows"] = cur.fetchone()[0]
             cur.execute("select count(*) from indicators")
             out["indicators_rows"] = cur.fetchone()[0]
+            cur.execute("select count(*) from article_symbols")
+            out["article_symbols_rows"] = cur.fetchone()[0]
             cur.execute("select count(*) from market_stats")
             out["market_stats_rows"] = cur.fetchone()[0]
 
