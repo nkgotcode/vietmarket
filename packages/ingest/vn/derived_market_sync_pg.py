@@ -24,6 +24,8 @@ import re
 from datetime import datetime, timezone
 
 import psycopg2
+import numpy as np
+import talib
 from psycopg2.extras import execute_values
 
 
@@ -504,6 +506,96 @@ def sync_article_symbols(cur, *, batch_size: int = 1000) -> dict:
     }
 
 
+
+def apply_talib_indicators(cur, lookback: int = 300) -> dict:
+    """Recompute technical indicators with TA-Lib and upsert latest per (ticker, tf)."""
+    cur.execute("""
+      SELECT DISTINCT ticker, tf
+      FROM candles
+      WHERE tf IN ('15m','1h','1d')
+    """)
+    pairs = cur.fetchall()
+
+    updates = []
+    for ticker, tf in pairs:
+        cur.execute("""
+          SELECT ts, o, h, l, c
+          FROM candles
+          WHERE ticker=%s AND tf=%s
+          ORDER BY ts DESC
+          LIMIT %s
+        """, (ticker, tf, lookback))
+        rows = cur.fetchall()
+        if not rows:
+            continue
+        rows = list(reversed(rows))
+
+        ts = np.array([r[0] for r in rows], dtype=np.int64)
+        o = np.array([float(r[1]) for r in rows], dtype=np.float64)
+        h = np.array([float(r[2]) for r in rows], dtype=np.float64)
+        l = np.array([float(r[3]) for r in rows], dtype=np.float64)
+        c = np.array([float(r[4]) for r in rows], dtype=np.float64)
+
+        sma20 = talib.SMA(c, timeperiod=20)
+        sma50 = talib.SMA(c, timeperiod=50)
+        ema20 = talib.EMA(c, timeperiod=20)
+        rsi14 = talib.RSI(c, timeperiod=14)
+        macd, macd_signal, macd_hist = talib.MACD(c, fastperiod=12, slowperiod=26, signalperiod=9)
+        atr14 = talib.ATR(h, l, c, timeperiod=14)
+        bb_upper, bb_mid, bb_lower = talib.BBANDS(c, timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
+
+        i = len(c) - 1
+
+        def v(arr):
+            x = arr[i]
+            if x is None:
+                return None
+            if isinstance(x, (float, np.floating)) and np.isnan(x):
+                return None
+            return float(x)
+
+        updates.append((
+            ticker, tf, int(ts[i]), float(c[i]),
+            v(sma20), v(sma50), v(ema20),
+            v(rsi14), v(macd), v(macd_signal), v(macd_hist),
+            v(atr14), v(bb_mid), v(bb_upper), v(bb_lower),
+        ))
+
+    if updates:
+        execute_values(
+            cur,
+            """
+            INSERT INTO technical_indicators (
+              ticker, tf, asof_ts,
+              close, sma20, sma50, ema20,
+              rsi14, macd, macd_signal, macd_hist,
+              atr14, bb_mid, bb_upper, bb_lower,
+              updated_at
+            ) VALUES %s
+            ON CONFLICT (ticker, tf) DO UPDATE SET
+              asof_ts = EXCLUDED.asof_ts,
+              close = EXCLUDED.close,
+              sma20 = EXCLUDED.sma20,
+              sma50 = EXCLUDED.sma50,
+              ema20 = EXCLUDED.ema20,
+              rsi14 = EXCLUDED.rsi14,
+              macd = EXCLUDED.macd,
+              macd_signal = EXCLUDED.macd_signal,
+              macd_hist = EXCLUDED.macd_hist,
+              atr14 = EXCLUDED.atr14,
+              bb_mid = EXCLUDED.bb_mid,
+              bb_upper = EXCLUDED.bb_upper,
+              bb_lower = EXCLUDED.bb_lower,
+              updated_at = now()
+            """,
+            [u + () for u in updates],
+            template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())",
+            page_size=500,
+        )
+
+    return {"talib_pairs": len(pairs), "talib_updates": len(updates)}
+
+
 def main() -> int:
     out = {"ok": True, "at": now_iso()}
     with psycopg2.connect(pg_url()) as pg:
@@ -519,6 +611,8 @@ def main() -> int:
 
             cur.execute(SQL_TECHNICAL)
             out["technical_sync"] = cur.rowcount
+
+            out.update(apply_talib_indicators(cur))
 
             cur.execute(SQL_INDICATORS)
             out["indicators_sync"] = cur.rowcount
