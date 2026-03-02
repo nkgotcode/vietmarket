@@ -1,0 +1,16 @@
+{
+  "event_id": "evt-001",
+  "event_type": "bar.close",
+  "source": "vietmarket",
+  "symbol": "VCB",
+  "tf": "1d",
+  "ts_ns": 1772460000000000000,
+  "payload": {
+    "close": 68.2,
+    "sma20": 66.9,
+    "sma50": 67.0,
+    "volume": 20000000,
+    "avg_volume_20": 10000000
+  },
+  "tags": ["bank"]
+}

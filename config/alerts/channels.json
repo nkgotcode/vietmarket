@@ -1,0 +1,7 @@
+{
+  "telegram": {"target": "self"},
+  "discord": {"target": "ops"},
+  "email": {},
+  "sms": {},
+  "webhook": {"url": ""}
+}

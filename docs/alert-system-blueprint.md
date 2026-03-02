@@ -396,3 +396,44 @@ python tools/alerts/resolve_alert_scope.py \
   --portfolio config/alerts/portfolio_symbols_current.json \
   --account primary
 ```
+
+## 20) Alert Engine Runtime (Implemented v1)
+
+Implemented runtime components:
+
+- `tools/alerts/engine/expression.py`
+  - Evaluates rule expressions + condition trees.
+  - Supports `crosses_above` / `crosses_below` stateful operators.
+- `tools/alerts/engine/state_store.py`
+  - JSON-backed state store for cooldowns, transition memory, fingerprints.
+- `tools/alerts/engine/dispatch.py`
+  - Channel dispatch adapters (stdout adapters + webhook post).
+- `tools/alerts/engine/core.py`
+  - Main event processor implementing:
+    - scope filtering,
+    - trigger mode handling,
+    - cooldown + dedupe,
+    - templated messages,
+    - state transitions.
+- `tools/alerts/run_alert_engine.py`
+  - CLI runtime entrypoint to process a normalized event file.
+
+Supporting configs:
+- `config/alerts/channels.json`
+- `config/alerts/samples/event.breakout.vcb.json`
+
+### Quick run
+
+```bash
+python tools/alerts/validate_alert_rules.py \
+  --rules config/alerts/rules.v1.yaml \
+  --schema docs/schemas/alert-rule.schema.json
+
+python tools/alerts/run_alert_engine.py \
+  --rules config/alerts/rules.v1.yaml \
+  --watchlists config/alerts/watchlists.json \
+  --portfolio config/alerts/portfolio_symbols_current.json \
+  --channels config/alerts/channels.json \
+  --event-file config/alerts/samples/event.breakout.vcb.json \
+  --state runtime/alerts/state.json
+```
