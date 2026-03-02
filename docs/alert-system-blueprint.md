@@ -340,3 +340,31 @@ The following starter artifacts are now in-repo:
 
 Recommended next step:
 - Implement `scripts/validate_alert_rules.py` to validate `rules.v1.yaml` against `alert-rule.schema.json` in CI.
+
+## 18) Dynamic Symbol Resolution (Watchlist + Portfolio Auto-Tracking)
+
+To support alerts for **any ticker configured by the user** and automatically track active holdings:
+
+### Scope selectors
+Rules should use `scope.symbol_selector`:
+- `static`: explicit `scope.symbols`
+- `watchlist`: symbols loaded from `watchlist_id`
+- `portfolio`: symbols loaded from live account positions
+- `all`: no symbol restriction
+
+### Portfolio auto-tracking
+For `symbol_selector: portfolio`:
+- Pull positions from broker/account sync on each portfolio update cycle.
+- Maintain `portfolio_symbols_current` cache keyed by account.
+- Rule engine resolves symbols at evaluation time from this cache.
+- If holdings change (new symbol bought/sold out), alert coverage updates automatically.
+
+### Data contracts (recommended)
+- `watchlists(id, name, symbols[], updated_at)`
+- `portfolio_snapshots(account_id, ts_ns, positions[], cash, nav)`
+- `portfolio_symbols_current(account_id, symbols[], updated_at)`
+
+### Operational behavior
+- On startup, run full portfolio sync before enabling alert evaluation.
+- If portfolio sync is stale, emit critical ops alert and pause `portfolio`-scoped rules.
+- Keep rule runtime independent from broker adapter by consuming normalized portfolio events.

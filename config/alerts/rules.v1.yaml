@@ -5,7 +5,8 @@ rules:
     enabled: true
     severity: medium
     scope:
-      symbols: [VCB, BVH, VPB, ACB, VCK, MSR]
+      symbol_selector: watchlist
+      watchlist_id: core-trading
       event_types: [bar.close]
     conditions:
       op: AND
@@ -24,7 +25,7 @@ rules:
     name: RSI re-entry signal
     enabled: true
     severity: medium
-    scope: { event_types: [indicator.update] }
+    scope: { symbol_selector: static, event_types: [indicator.update] }
     conditions:
       op: OR
       args:
@@ -42,7 +43,7 @@ rules:
     name: MACD crossover on daily timeframe
     enabled: true
     severity: medium
-    scope: { event_types: [indicator.update] }
+    scope: { symbol_selector: static, event_types: [indicator.update] }
     conditions:
       op: AND
       args:
@@ -60,7 +61,7 @@ rules:
     name: ATR volatility shock
     enabled: true
     severity: high
-    scope: { event_types: [indicator.update] }
+    scope: { symbol_selector: static, event_types: [indicator.update] }
     conditions: { expr: "payload.atr14 > payload.atr14_mean_20 + 2 * payload.atr14_std_20" }
     trigger: { mode: on_transition }
     noise_control: { cooldown_sec: 3600 }
@@ -75,7 +76,8 @@ rules:
     enabled: true
     severity: high
     scope:
-      symbols: [VCB, BVH, VPB, ACB, VCK, MSR]
+      symbol_selector: watchlist
+      watchlist_id: core-trading
       event_types: [news.item]
     conditions:
       op: AND
@@ -94,7 +96,7 @@ rules:
     name: Earnings proximity alert
     enabled: true
     severity: medium
-    scope: { event_types: [news.item] }
+    scope: { symbol_selector: static, event_types: [news.item] }
     conditions: { expr: "payload.event_type == 'earnings' and payload.days_to_event in [3,1,0]" }
     trigger: { mode: once_until_reset, reset_expr: "payload.days_to_event > 3" }
     noise_control: { cooldown_sec: 86400 }
@@ -108,7 +110,10 @@ rules:
     name: Position allocation breach
     enabled: true
     severity: high
-    scope: { event_types: [portfolio.update] }
+    scope:
+      symbol_selector: portfolio
+      portfolio_filter: { account_ids: [primary], min_weight_pct: 0.0, include_cash: false }
+      event_types: [portfolio.update]
     conditions: { expr: "payload.position_weight_pct > payload.max_weight_pct" }
     trigger: { mode: on_transition, reset_expr: "payload.position_weight_pct <= payload.max_weight_pct" }
     noise_control: { cooldown_sec: 900 }
@@ -122,7 +127,10 @@ rules:
     name: Daily drawdown breach
     enabled: true
     severity: critical
-    scope: { event_types: [portfolio.update] }
+    scope:
+      symbol_selector: portfolio
+      portfolio_filter: { account_ids: [primary] }
+      event_types: [portfolio.update]
     conditions: { expr: "payload.daily_drawdown_pct <= -payload.max_daily_drawdown_pct" }
     trigger: { mode: once_until_reset, reset_expr: "payload.daily_drawdown_pct > -payload.max_daily_drawdown_pct * 0.5" }
     noise_control: { cooldown_sec: 300 }
@@ -139,7 +147,10 @@ rules:
     name: Order rejected or stalled
     enabled: true
     severity: high
-    scope: { event_types: [execution.update] }
+    scope:
+      symbol_selector: portfolio
+      portfolio_filter: { account_ids: [primary] }
+      event_types: [execution.update]
     conditions:
       op: OR
       args:
@@ -157,7 +168,7 @@ rules:
     name: Market data stale frontier
     enabled: true
     severity: critical
-    scope: { event_types: [system.health] }
+    scope: { symbol_selector: all, event_types: [system.health] }
     conditions:
       op: AND
       args:

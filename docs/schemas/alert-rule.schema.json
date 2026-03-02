@@ -3,19 +3,51 @@
   "$id": "https://vietmarket.local/schemas/alert-rule.schema.json",
   "title": "AlertRule",
   "type": "object",
-  "required": ["id", "name", "enabled", "severity", "scope", "conditions", "trigger", "routing", "template"],
+  "required": [
+    "id",
+    "name",
+    "enabled",
+    "severity",
+    "scope",
+    "conditions",
+    "trigger",
+    "routing",
+    "template"
+  ],
   "properties": {
-    "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-\.]{3,128}$" },
-    "name": { "type": "string", "minLength": 3, "maxLength": 256 },
-    "enabled": { "type": "boolean" },
-    "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_\\-\\.]{3,128}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
     "scope": {
       "type": "object",
-      "required": ["event_types"],
+      "required": [
+        "event_types"
+      ],
       "properties": {
         "symbols": {
           "type": "array",
-          "items": { "type": "string", "pattern": "^[A-Z0-9]{1,12}$" },
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z0-9]{1,12}$"
+          },
           "uniqueItems": true,
           "default": []
         },
@@ -38,15 +70,61 @@
         },
         "accounts": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "uniqueItems": true,
           "default": []
         },
         "tags_any": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "uniqueItems": true,
           "default": []
+        },
+        "symbol_selector": {
+          "type": "string",
+          "enum": [
+            "static",
+            "watchlist",
+            "portfolio",
+            "all"
+          ],
+          "default": "static",
+          "description": "How symbols are resolved for this rule."
+        },
+        "watchlist_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "portfolio_filter": {
+          "type": "object",
+          "properties": {
+            "account_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true,
+              "default": []
+            },
+            "min_weight_pct": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0
+            },
+            "include_cash": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
         }
       },
       "additionalProperties": false
@@ -56,34 +134,69 @@
     },
     "trigger": {
       "type": "object",
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "properties": {
-        "mode": { "type": "string", "enum": ["always", "on_transition", "once_until_reset"] },
-        "reset_expr": { "type": ["string", "null"] }
+        "mode": {
+          "type": "string",
+          "enum": [
+            "always",
+            "on_transition",
+            "once_until_reset"
+          ]
+        },
+        "reset_expr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
       "additionalProperties": false
     },
     "noise_control": {
       "type": "object",
       "properties": {
-        "cooldown_sec": { "type": "integer", "minimum": 0, "default": 0 },
-        "dedupe_fingerprint": { "type": "boolean", "default": true },
+        "cooldown_sec": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "dedupe_fingerprint": {
+          "type": "boolean",
+          "default": true
+        },
         "hysteresis": {
           "type": "object",
           "properties": {
-            "enabled": { "type": "boolean", "default": false },
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
             "bands": {
               "type": "object",
               "properties": {
-                "enter": { "type": "number", "default": 0 },
-                "exit": { "type": "number", "default": 0 }
+                "enter": {
+                  "type": "number",
+                  "default": 0
+                },
+                "exit": {
+                  "type": "number",
+                  "default": 0
+                }
               },
-              "required": ["enter", "exit"],
+              "required": [
+                "enter",
+                "exit"
+              ],
               "additionalProperties": false
             }
           },
           "additionalProperties": false,
-          "default": { "enabled": false }
+          "default": {
+            "enabled": false
+          }
         }
       },
       "additionalProperties": false,
@@ -91,42 +204,76 @@
     },
     "routing": {
       "type": "object",
-      "required": ["channels"],
+      "required": [
+        "channels"
+      ],
       "properties": {
         "channels": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "string",
-            "enum": ["telegram", "discord", "email", "sms", "webhook"]
+            "enum": [
+              "telegram",
+              "discord",
+              "email",
+              "sms",
+              "webhook"
+            ]
           },
           "uniqueItems": true
         },
-        "priority": { "type": "string", "enum": ["passive", "active", "timeSensitive"], "default": "active" },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "passive",
+            "active",
+            "timeSensitive"
+          ],
+          "default": "active"
+        },
         "quiet_hours": {
           "type": "object",
           "properties": {
-            "timezone": { "type": "string", "default": "Asia/Ho_Chi_Minh" },
+            "timezone": {
+              "type": "string",
+              "default": "Asia/Ho_Chi_Minh"
+            },
             "ranges": {
               "type": "array",
-              "items": { "type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d-([01]\\d|2[0-3]):[0-5]\\d$" },
+              "items": {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d-([01]\\d|2[0-3]):[0-5]\\d$"
+              },
               "default": []
             }
           },
           "additionalProperties": false,
-          "default": { "timezone": "Asia/Ho_Chi_Minh", "ranges": [] }
+          "default": {
+            "timezone": "Asia/Ho_Chi_Minh",
+            "ranges": []
+          }
         },
         "escalation": {
           "type": "object",
           "properties": {
-            "after_sec": { "type": "integer", "minimum": 60 },
+            "after_sec": {
+              "type": "integer",
+              "minimum": 60
+            },
             "to": {
               "type": "array",
-              "items": { "type": "string", "minLength": 3 },
+              "items": {
+                "type": "string",
+                "minLength": 3
+              },
               "minItems": 1
             }
           },
-          "required": ["after_sec", "to"],
+          "required": [
+            "after_sec",
+            "to"
+          ],
           "additionalProperties": false
         }
       },
@@ -134,21 +281,38 @@
     },
     "template": {
       "type": "object",
-      "required": ["title", "body"],
+      "required": [
+        "title",
+        "body"
+      ],
       "properties": {
-        "title": { "type": "string", "minLength": 1 },
-        "body": { "type": "string", "minLength": 1 }
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1
+        }
       },
       "additionalProperties": false
     },
     "metadata": {
       "type": "object",
       "properties": {
-        "owner": { "type": "string" },
-        "version": { "type": "integer", "minimum": 1, "default": 1 },
+        "owner": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
         "labels": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "uniqueItems": true,
           "default": []
         }
@@ -162,20 +326,37 @@
       "oneOf": [
         {
           "type": "object",
-          "required": ["expr"],
+          "required": [
+            "expr"
+          ],
           "properties": {
-            "expr": { "type": "string", "minLength": 1 }
+            "expr": {
+              "type": "string",
+              "minLength": 1
+            }
           },
           "additionalProperties": false
         },
         {
           "type": "object",
-          "required": ["op", "args"],
+          "required": [
+            "op",
+            "args"
+          ],
           "properties": {
-            "op": { "type": "string", "enum": ["AND", "OR", "NOT"] },
+            "op": {
+              "type": "string",
+              "enum": [
+                "AND",
+                "OR",
+                "NOT"
+              ]
+            },
             "args": {
               "type": "array",
-              "items": { "$ref": "#/$defs/conditionNode" },
+              "items": {
+                "$ref": "#/$defs/conditionNode"
+              },
               "minItems": 1
             }
           },
@@ -184,5 +365,6 @@
       ]
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "description": "Alert rule schema with dynamic symbol selectors (static/watchlist/portfolio/all)."
 }
