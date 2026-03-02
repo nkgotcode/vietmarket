@@ -35,6 +35,25 @@ def ns_now() -> int:
     return int(time.time() * 1_000_000_000)
 
 
+def enqueue_db_event(cur, event: dict):
+    cur.execute(
+        """
+        INSERT INTO alert_events (
+          event_id, event_type, source, symbol, tf, account_id, venue, ts_ns, payload, tags, processing_state
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,'pending')
+        ON CONFLICT (event_id) DO NOTHING
+        """,
+        (
+            event.get('event_id'), event.get('event_type'), event.get('source'), event.get('symbol'),
+            event.get('tf'), event.get('account_id'), event.get('venue'), int(event.get('ts_ns') or 0),
+            json.dumps(event.get('payload') or {}, ensure_ascii=False),
+            json.dumps(event.get('tags') or [], ensure_ascii=False),
+        ),
+    )
+    if cur.rowcount > 0:
+        cur.execute("SELECT pg_notify('alert_events', %s)", (str(event.get('event_id')),))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--pg-url', required=True)
@@ -43,6 +62,7 @@ def main() -> int:
     ap.add_argument('--symbol', action='append', default=[])
     ap.add_argument('--emit-news', action='store_true')
     ap.add_argument('--emit-health', action='store_true')
+    ap.add_argument('--db-queue', action='store_true', help='Also enqueue events into alert_events and NOTIFY')
     args = ap.parse_args()
 
     events_path = Path(args.events_jsonl)
@@ -90,6 +110,8 @@ def main() -> int:
                 'tags': []
             }
             append_jsonl(events_path, evt)
+            if args.db_queue:
+                enqueue_db_event(cur, evt)
             if int(asof_ts) > int(max_asof):
                 max_asof = int(asof_ts)
 
@@ -132,6 +154,8 @@ def main() -> int:
                     'tags': []
                 }
                 append_jsonl(events_path, evt)
+            if args.db_queue:
+                enqueue_db_event(cur, evt)
                 if ep > max_ep:
                     max_ep = ep
             state['last_news_epoch'] = max_ep
@@ -162,6 +186,8 @@ def main() -> int:
                     'tags': ['health']
                 }
                 append_jsonl(events_path, evt)
+            if args.db_queue:
+                enqueue_db_event(cur, evt)
 
     save_state(state_path, state)
     print(json.dumps({'ok': True, 'state': state}, ensure_ascii=False))

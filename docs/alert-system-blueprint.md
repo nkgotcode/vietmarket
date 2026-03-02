@@ -665,3 +665,50 @@ Disable JSONL producer for normal operation (retain emergency fallback).
    - crash recovery of `processing` rows,
    - idempotent duplicate event handling.
 
+
+## 24) LISTEN/NOTIFY Runtime (Implemented)
+
+Implemented files:
+- `tools/alerts/sql/alert_events.sql`
+- `tools/alerts/init_alert_events_table.py`
+- `tools/alerts/run_alert_daemon.py`
+
+Producer enhancement:
+- `tools/alerts/emit_events_from_pg.py` now supports `--db-queue`
+  - inserts into `alert_events`
+  - emits `NOTIFY alert_events, <event_id>`
+
+### Setup
+
+```bash
+python tools/alerts/init_alert_events_table.py --pg-url "$PG_URL"
+```
+
+### Start daemon (no polling loop)
+
+```bash
+python tools/alerts/run_alert_daemon.py \
+  --pg-url "$PG_URL" \
+  --rules config/alerts/rules.v1.yaml \
+  --watchlists config/alerts/watchlists.json \
+  --portfolio config/alerts/portfolio_symbols_current.json \
+  --channels config/alerts/channels.json \
+  --state runtime/alerts/state.json \
+  --firelog runtime/alerts/fires.jsonl
+```
+
+### Emit live events into queue + notify
+
+```bash
+python tools/alerts/emit_events_from_pg.py \
+  --pg-url "$PG_URL" \
+  --db-queue \
+  --events-jsonl runtime/alerts/events.jsonl \
+  --state runtime/alerts/producer_state.json \
+  --emit-news --emit-health
+```
+
+### Reliability behavior
+- Daemon replays pending/error events on startup.
+- Stuck `processing` rows (>5m) are reset to `pending` during replay.
+- Each event tracks attempts and last_error.
