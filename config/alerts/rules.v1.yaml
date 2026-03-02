@@ -1,0 +1,175 @@
+version: 1
+rules:
+  - id: R001_price_breakout_volume
+    name: Breakout with volume confirmation
+    enabled: true
+    severity: medium
+    scope:
+      symbols: [VCB, BVH, VPB, ACB, VCK, MSR]
+      event_types: [bar.close]
+    conditions:
+      op: AND
+      args:
+        - expr: payload.close > payload.sma50
+        - expr: payload.volume > payload.avg_volume_20 * 1.5
+    trigger: { mode: on_transition, reset_expr: "payload.close < payload.sma20" }
+    noise_control: { cooldown_sec: 1800, dedupe_fingerprint: true }
+    routing: { channels: [telegram], priority: active }
+    template:
+      title: "{symbol} breakout confirmed"
+      body: "Close {payload.close} > SMA50 {payload.sma50}; vol {payload.volume} > 1.5x avg20"
+    metadata: { owner: trading, version: 1 }
+
+  - id: R002_rsi_reentry
+    name: RSI re-entry signal
+    enabled: true
+    severity: medium
+    scope: { event_types: [indicator.update] }
+    conditions:
+      op: OR
+      args:
+        - expr: payload.rsi14 crosses_above 30
+        - expr: payload.rsi14 crosses_below 70
+    trigger: { mode: on_transition }
+    noise_control: { cooldown_sec: 3600 }
+    routing: { channels: [telegram], priority: active }
+    template:
+      title: "{symbol} RSI re-entry"
+      body: "RSI14 moved to {payload.rsi14} on {tf}"
+    metadata: { owner: trading, version: 1 }
+
+  - id: R003_macd_crossover_1d
+    name: MACD crossover on daily timeframe
+    enabled: true
+    severity: medium
+    scope: { event_types: [indicator.update] }
+    conditions:
+      op: AND
+      args:
+        - expr: tf == '1d'
+        - expr: payload.macd crosses_above payload.macd_signal
+    trigger: { mode: on_transition, reset_expr: "payload.macd crosses_below payload.macd_signal" }
+    noise_control: { cooldown_sec: 7200 }
+    routing: { channels: [telegram], priority: active }
+    template:
+      title: "{symbol} MACD bullish cross"
+      body: "MACD {payload.macd} > signal {payload.macd_signal} on 1D"
+    metadata: { owner: trading, version: 1 }
+
+  - id: R004_atr_volatility_shock
+    name: ATR volatility shock
+    enabled: true
+    severity: high
+    scope: { event_types: [indicator.update] }
+    conditions: { expr: "payload.atr14 > payload.atr14_mean_20 + 2 * payload.atr14_std_20" }
+    trigger: { mode: on_transition }
+    noise_control: { cooldown_sec: 3600 }
+    routing: { channels: [telegram, webhook], priority: timeSensitive }
+    template:
+      title: "{symbol} volatility shock"
+      body: "ATR14 spike detected: {payload.atr14}"
+    metadata: { owner: risk, version: 1 }
+
+  - id: R005_high_impact_news_watchlist
+    name: High impact news on watchlist
+    enabled: true
+    severity: high
+    scope:
+      symbols: [VCB, BVH, VPB, ACB, VCK, MSR]
+      event_types: [news.item]
+    conditions:
+      op: AND
+      args:
+        - expr: payload.impact_score >= 0.8
+        - expr: payload.novelty_score >= 0.6
+    trigger: { mode: always }
+    noise_control: { cooldown_sec: 600, dedupe_fingerprint: true }
+    routing: { channels: [telegram, discord], priority: timeSensitive }
+    template:
+      title: "{symbol} high-impact news"
+      body: "{payload.headline} (impact={payload.impact_score}, novelty={payload.novelty_score})"
+    metadata: { owner: trading, version: 1 }
+
+  - id: R006_earnings_window
+    name: Earnings proximity alert
+    enabled: true
+    severity: medium
+    scope: { event_types: [news.item] }
+    conditions: { expr: "payload.event_type == 'earnings' and payload.days_to_event in [3,1,0]" }
+    trigger: { mode: once_until_reset, reset_expr: "payload.days_to_event > 3" }
+    noise_control: { cooldown_sec: 86400 }
+    routing: { channels: [telegram], priority: active }
+    template:
+      title: "{symbol} earnings window T-{payload.days_to_event}"
+      body: "Earnings event approaching/active for {symbol}"
+    metadata: { owner: trading, version: 1 }
+
+  - id: R007_position_limit_breach
+    name: Position allocation breach
+    enabled: true
+    severity: high
+    scope: { event_types: [portfolio.update] }
+    conditions: { expr: "payload.position_weight_pct > payload.max_weight_pct" }
+    trigger: { mode: on_transition, reset_expr: "payload.position_weight_pct <= payload.max_weight_pct" }
+    noise_control: { cooldown_sec: 900 }
+    routing: { channels: [telegram, webhook], priority: timeSensitive }
+    template:
+      title: "Position limit breach: {symbol}"
+      body: "Weight {payload.position_weight_pct}% > max {payload.max_weight_pct}%"
+    metadata: { owner: risk, version: 1 }
+
+  - id: R008_daily_drawdown_breach
+    name: Daily drawdown breach
+    enabled: true
+    severity: critical
+    scope: { event_types: [portfolio.update] }
+    conditions: { expr: "payload.daily_drawdown_pct <= -payload.max_daily_drawdown_pct" }
+    trigger: { mode: once_until_reset, reset_expr: "payload.daily_drawdown_pct > -payload.max_daily_drawdown_pct * 0.5" }
+    noise_control: { cooldown_sec: 300 }
+    routing:
+      channels: [telegram, webhook]
+      priority: timeSensitive
+      escalation: { after_sec: 120, to: ["telegram:ops", "webhook:risk"] }
+    template:
+      title: "CRITICAL drawdown breach"
+      body: "Daily DD {payload.daily_drawdown_pct}% beyond limit {payload.max_daily_drawdown_pct}%"
+    metadata: { owner: risk, version: 1 }
+
+  - id: R009_order_reject_or_stall
+    name: Order rejected or stalled
+    enabled: true
+    severity: high
+    scope: { event_types: [execution.update] }
+    conditions:
+      op: OR
+      args:
+        - expr: payload.status == 'REJECTED'
+        - expr: payload.status == 'PARTIAL' and payload.seconds_since_last_fill > 180
+    trigger: { mode: on_transition }
+    noise_control: { cooldown_sec: 300 }
+    routing: { channels: [telegram, discord], priority: timeSensitive }
+    template:
+      title: "Execution issue: {symbol}"
+      body: "Order {payload.client_order_id} status={payload.status} reason={payload.reason}"
+    metadata: { owner: execution, version: 1 }
+
+  - id: R010_data_stale_frontier
+    name: Market data stale frontier
+    enabled: true
+    severity: critical
+    scope: { event_types: [system.health] }
+    conditions:
+      op: AND
+      args:
+        - expr: payload.metric == 'candles_frontier_lag_ms'
+        - expr: payload.value > payload.threshold_ms
+    trigger: { mode: once_until_reset, reset_expr: "payload.value <= payload.threshold_ms * 0.5" }
+    noise_control: { cooldown_sec: 600 }
+    routing:
+      channels: [telegram, webhook]
+      priority: timeSensitive
+      escalation: { after_sec: 180, to: ["telegram:ops", "webhook:incident"] }
+    template:
+      title: "CRITICAL data stale"
+      body: "Frontier lag {payload.value}ms over threshold {payload.threshold_ms}ms"
+    metadata: { owner: ops, version: 1 }

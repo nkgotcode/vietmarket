@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vietmarket.local/schemas/alert-event.schema.json",
+  "title": "AlertEvent",
+  "type": "object",
+  "required": ["event_id", "event_type", "source", "ts_ns", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "minLength": 8 },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "price.tick",
+        "bar.close",
+        "indicator.update",
+        "news.item",
+        "portfolio.update",
+        "execution.update",
+        "system.health"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "enum": ["vietmarket", "broker", "strategy", "ops", "manual"]
+    },
+    "symbol": { "type": ["string", "null"], "pattern": "^[A-Z0-9]{1,12}$" },
+    "tf": { "type": ["string", "null"], "enum": [null, "15m", "1h", "1d", "1w"] },
+    "account_id": { "type": ["string", "null"] },
+    "venue": { "type": ["string", "null"] },
+    "ts_ns": { "type": "integer", "minimum": 1 },
+    "payload": {
+      "type": "object",
+      "description": "Normalized event payload. Keys are event-type dependent.",
+      "additionalProperties": true
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "default": []
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "default": {}
+    }
+  },
+  "additionalProperties": false
+}

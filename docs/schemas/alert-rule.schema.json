@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vietmarket.local/schemas/alert-rule.schema.json",
+  "title": "AlertRule",
+  "type": "object",
+  "required": ["id", "name", "enabled", "severity", "scope", "conditions", "trigger", "routing", "template"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-\.]{3,128}$" },
+    "name": { "type": "string", "minLength": 3, "maxLength": 256 },
+    "enabled": { "type": "boolean" },
+    "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+    "scope": {
+      "type": "object",
+      "required": ["event_types"],
+      "properties": {
+        "symbols": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Z0-9]{1,12}$" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "event_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "price.tick",
+              "bar.close",
+              "indicator.update",
+              "news.item",
+              "portfolio.update",
+              "execution.update",
+              "system.health"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "accounts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        },
+        "tags_any": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "conditions": {
+      "$ref": "#/$defs/conditionNode"
+    },
+    "trigger": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["always", "on_transition", "once_until_reset"] },
+        "reset_expr": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "noise_control": {
+      "type": "object",
+      "properties": {
+        "cooldown_sec": { "type": "integer", "minimum": 0, "default": 0 },
+        "dedupe_fingerprint": { "type": "boolean", "default": true },
+        "hysteresis": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "bands": {
+              "type": "object",
+              "properties": {
+                "enter": { "type": "number", "default": 0 },
+                "exit": { "type": "number", "default": 0 }
+              },
+              "required": ["enter", "exit"],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "default": { "enabled": false }
+        }
+      },
+      "additionalProperties": false,
+      "default": {}
+    },
+    "routing": {
+      "type": "object",
+      "required": ["channels"],
+      "properties": {
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["telegram", "discord", "email", "sms", "webhook"]
+          },
+          "uniqueItems": true
+        },
+        "priority": { "type": "string", "enum": ["passive", "active", "timeSensitive"], "default": "active" },
+        "quiet_hours": {
+          "type": "object",
+          "properties": {
+            "timezone": { "type": "string", "default": "Asia/Ho_Chi_Minh" },
+            "ranges": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d-([01]\\d|2[0-3]):[0-5]\\d$" },
+              "default": []
+            }
+          },
+          "additionalProperties": false,
+          "default": { "timezone": "Asia/Ho_Chi_Minh", "ranges": [] }
+        },
+        "escalation": {
+          "type": "object",
+          "properties": {
+            "after_sec": { "type": "integer", "minimum": 60 },
+            "to": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 3 },
+              "minItems": 1
+            }
+          },
+          "required": ["after_sec", "to"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "template": {
+      "type": "object",
+      "required": ["title", "body"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "body": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "owner": { "type": "string" },
+        "version": { "type": "integer", "minimum": 1, "default": 1 },
+        "labels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "default": []
+        }
+      },
+      "additionalProperties": true,
+      "default": {}
+    }
+  },
+  "$defs": {
+    "conditionNode": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["expr"],
+          "properties": {
+            "expr": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["op", "args"],
+          "properties": {
+            "op": { "type": "string", "enum": ["AND", "OR", "NOT"] },
+            "args": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/conditionNode" },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

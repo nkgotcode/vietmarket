@@ -329,3 +329,14 @@ Stores:
 - Keep broker-specific payloads behind normalized event schema.
 - Integrate with OpenClaw `message` tool dispatch adapters for immediate delivery channels.
 
+
+## 17) Delivered Artifacts (v1)
+
+The following starter artifacts are now in-repo:
+
+- Event schema: `docs/schemas/alert-event.schema.json`
+- Rule schema: `docs/schemas/alert-rule.schema.json`
+- Starter rules pack: `config/alerts/rules.v1.yaml`
+
+Recommended next step:
+- Implement `scripts/validate_alert_rules.py` to validate `rules.v1.yaml` against `alert-rule.schema.json` in CI.
