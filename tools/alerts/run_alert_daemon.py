@@ -31,7 +31,7 @@ def append_jsonl(path: Path, row: dict):
         f.write(json.dumps(row, ensure_ascii=False) + '\n')
 
 
-def build_resolver(watchlists: dict, portfolio: dict, account: str):
+def build_resolver(state_refs: dict, account: str):
     def resolve_symbols(rule: dict):
         scope = rule.get('scope', {})
         selector = scope.get('symbol_selector', 'static')
@@ -41,12 +41,14 @@ def build_resolver(watchlists: dict, portfolio: dict, account: str):
             return sorted(set(scope.get('symbols') or []))
         if selector == 'watchlist':
             wid = scope.get('watchlist_id')
+            watchlists = state_refs.get("watchlists", {})
             return sorted(set((watchlists.get(wid) or {}).get('symbols') or []))
         if selector == 'portfolio':
             pf = scope.get('portfolio_filter') or {}
             account_ids = pf.get('account_ids') or [account]
             min_w = float(pf.get('min_weight_pct', 0) or 0)
             symbols = set()
+            portfolio = state_refs.get("portfolio", {"accounts": {}})
             for aid in account_ids:
                 pos = (portfolio.get('accounts', {}).get(aid, {}) or {}).get('positions', [])
                 for p in pos:
@@ -144,10 +146,12 @@ def main() -> int:
 
     rules_doc = load_yaml(Path(args.rules))
     rules = rules_doc.get('rules', [])
-    watchlists = load_json(Path(args.watchlists), {})
-    portfolio = load_json(Path(args.portfolio), {'accounts': {}})
+    state_refs = {
+        "watchlists": load_json(Path(args.watchlists), {}),
+        "portfolio": load_json(Path(args.portfolio), {"accounts": {}}),
+    }
     channels_cfg = load_json(Path(args.channels), {})
-    resolver = build_resolver(watchlists, portfolio, args.account)
+    resolver = build_resolver(state_refs, args.account)
     store = JsonStateStore(args.state)
     firelog = Path(args.firelog)
 
@@ -156,6 +160,8 @@ def main() -> int:
 
     with conn.cursor() as cur:
         cur.execute('LISTEN alert_events;')
+        cur.execute('LISTEN watchlist_updates;')
+        cur.execute('LISTEN portfolio_updates;')
 
     replayed = replay_pending(conn, args.replay_limit, rules, resolver, store, channels_cfg, firelog)
     print(json.dumps({'ok': True, 'replayed': replayed, 'listen': 'alert_events'}))
@@ -166,8 +172,15 @@ def main() -> int:
         conn.poll()
         while conn.notifies:
             notify = conn.notifies.pop(0)
-            event_id = notify.payload
-            process_event_id(conn, event_id, rules, resolver, store, channels_cfg, firelog)
+            if notify.channel == 'alert_events':
+                event_id = notify.payload
+                process_event_id(conn, event_id, rules, resolver, store, channels_cfg, firelog)
+            elif notify.channel == 'watchlist_updates':
+                state_refs['watchlists'] = load_json(Path(args.watchlists), {})
+                print(json.dumps({'reloaded': 'watchlists'}))
+            elif notify.channel == 'portfolio_updates':
+                state_refs['portfolio'] = load_json(Path(args.portfolio), {'accounts': {}})
+                print(json.dumps({'reloaded': 'portfolio'}))
 
 
 if __name__ == '__main__':

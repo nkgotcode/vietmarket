@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 
 import psycopg2
+from engine.schema_validate import validate_event
 
 
 def append_jsonl(path: Path, row: dict):
@@ -33,6 +34,34 @@ def save_state(path: Path, state: dict):
 
 def ns_now() -> int:
     return int(time.time() * 1_000_000_000)
+
+def emit_event(cur, events_path: Path, event: dict, args):
+    ok, err = validate_event(event, args.event_schema)
+    if not ok:
+      log_ingress_error(cur, event, err or 'invalid_event')
+      if args.strict_ingress:
+          return False
+    append_jsonl(events_path, event)
+    if args.db_queue and ok:
+        enqueue_db_event(cur, event)
+    return True
+
+
+
+def log_ingress_error(cur, event: dict, error: str):
+    cur.execute(
+        """
+        INSERT INTO ingress_errors (event_id, source, event_type, payload, error)
+        VALUES (%s,%s,%s,%s::jsonb,%s)
+        """,
+        (
+            event.get('event_id'),
+            event.get('source'),
+            event.get('event_type'),
+            json.dumps(event, ensure_ascii=False),
+            str(error)[:2000],
+        ),
+    )
 
 
 def enqueue_db_event(cur, event: dict):
@@ -63,6 +92,8 @@ def main() -> int:
     ap.add_argument('--emit-news', action='store_true')
     ap.add_argument('--emit-health', action='store_true')
     ap.add_argument('--db-queue', action='store_true', help='Also enqueue events into alert_events and NOTIFY')
+    ap.add_argument('--event-schema', default='docs/schemas/alert-event.schema.json')
+    ap.add_argument('--strict-ingress', action='store_true', default=True)
     args = ap.parse_args()
 
     events_path = Path(args.events_jsonl)
@@ -109,9 +140,7 @@ def main() -> int:
                 },
                 'tags': []
             }
-            append_jsonl(events_path, evt)
-            if args.db_queue:
-                enqueue_db_event(cur, evt)
+            emit_event(cur, events_path, evt, args)
             if int(asof_ts) > int(max_asof):
                 max_asof = int(asof_ts)
 
@@ -153,9 +182,7 @@ def main() -> int:
                     },
                     'tags': []
                 }
-                append_jsonl(events_path, evt)
-            if args.db_queue:
-                enqueue_db_event(cur, evt)
+                emit_event(cur, events_path, evt, args)
                 if ep > max_ep:
                     max_ep = ep
             state['last_news_epoch'] = max_ep
@@ -185,9 +212,7 @@ def main() -> int:
                     },
                     'tags': ['health']
                 }
-                append_jsonl(events_path, evt)
-            if args.db_queue:
-                enqueue_db_event(cur, evt)
+                emit_event(cur, events_path, evt, args)
 
     save_state(state_path, state)
     print(json.dumps({'ok': True, 'state': state}, ensure_ascii=False))

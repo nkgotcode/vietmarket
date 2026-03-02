@@ -781,3 +781,65 @@ python tools/alerts/replay_dead_letters.py \
 1. Keep daemon running under systemd or Nomad template.
 2. Run `daemon_health.py` from monitoring every 1-5 minutes.
 3. Replay dead letters periodically (or on demand) after fixing channel credentials.
+
+
+## 30) Real-Time-Safe #3/#4 Plan (Schema Ingress + Live Scope Refresh)
+
+### #3 Schema-enforced ingress (real-time safe)
+- Validate each incoming normalized event against `docs/schemas/alert-event.schema.json` **before** queue insert.
+- Keep a cached validator in-process (no per-event schema reload).
+- On validation failure:
+  - write to `ingress_errors` (durable table),
+  - include `event_id`, payload, error reason,
+  - do **not** emit NOTIFY for invalid events.
+- Modes:
+  - strict (default): reject invalid event.
+  - lenient: optional pass-through with `processing_state=error` (disabled by default).
+
+### #4 Portfolio/watchlist auto-refresh (event-driven, no polling)
+- Daemon listens on channels:
+  - `watchlist_updates`
+  - `portfolio_updates`
+- On notification, daemon hot-reloads corresponding scope source and applies immediately for subsequent events.
+- Scope updates are written atomically and accompanied by `NOTIFY` so rule coverage updates in near real time.
+- If scope payload/file invalid, keep previous in-memory state and emit ops alert.
+
+### Implementation artifacts
+- Cached schema validator module.
+- `ingress_errors` table in alert SQL.
+- Producer ingress validation + error logging.
+- Daemon multi-channel LISTEN + hot reload.
+- Scope updater utility to write state + send NOTIFY.
+
+## 31) #3/#4 Implemented in Real-Time-Safe Mode
+
+### #3 Schema-enforced ingress (implemented)
+- Added cached validator module:
+  - `tools/alerts/engine/schema_validate.py`
+- `tools/alerts/emit_events_from_pg.py` now validates events using:
+  - `--event-schema docs/schemas/alert-event.schema.json`
+  - strict ingress mode (default)
+- Invalid events are recorded in `ingress_errors` and not notified.
+- Added SQL schema support:
+  - `ingress_errors` table in `tools/alerts/sql/alert_events.sql`
+
+### #4 Live watchlist/portfolio refresh without polling (implemented)
+- Daemon now listens to extra channels:
+  - `watchlist_updates`
+  - `portfolio_updates`
+- On notify, daemon hot-reloads in-memory scope data immediately.
+- Added state update utility:
+  - `tools/alerts/update_scope_state.py`
+  - atomically writes scope JSON + emits corresponding NOTIFY.
+
+### Scope update examples
+
+```bash
+python tools/alerts/update_scope_state.py \
+  --pg-url "$PG_URL" \
+  --watchlists-json '{"core-trading":{"name":"Core Trading","symbols":["VCB","BVH"]}}'
+
+python tools/alerts/update_scope_state.py \
+  --pg-url "$PG_URL" \
+  --portfolio-json '{"asof":"2026-03-03T02:00:00+07:00","accounts":{"primary":{"positions":[{"symbol":"VCB","weight_pct":18.4}]}}}'
+```

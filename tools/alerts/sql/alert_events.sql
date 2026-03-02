@@ -22,3 +22,17 @@ CREATE INDEX IF NOT EXISTS idx_alert_events_state_created
 
 CREATE INDEX IF NOT EXISTS idx_alert_events_event_type_created
   ON alert_events (event_type, created_at DESC);
+
+
+CREATE TABLE IF NOT EXISTS ingress_errors (
+  id          BIGSERIAL PRIMARY KEY,
+  event_id    TEXT NULL,
+  source      TEXT NULL,
+  event_type  TEXT NULL,
+  payload     JSONB NOT NULL,
+  error       TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingress_errors_created
+  ON ingress_errors (created_at DESC);
