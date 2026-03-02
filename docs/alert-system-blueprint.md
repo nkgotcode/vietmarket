@@ -470,3 +470,38 @@ python tools/alerts/run_alert_engine.py \
 python tools/alerts/replay_firelog.py --firelog runtime/alerts/fires.jsonl
 python tools/alerts/replay_firelog.py --firelog runtime/alerts/fires.jsonl --rule-id R001_price_breakout_volume
 ```
+
+## 22) Live Event Producer (Implemented)
+
+Added producer:
+- `tools/alerts/emit_events_from_pg.py`
+
+Purpose:
+- Pull incremental events from Postgres and append normalized JSONL events for alert daemon consumption.
+
+Current event emitters:
+- `indicator.update` from `technical_indicators` delta (`asof_ts` watermark)
+- `news.item` from `articles + article_symbols` (optional flag)
+- `system.health` from `market_stats` (optional flag)
+
+State file:
+- `runtime/alerts/producer_state.json`
+
+Event stream file:
+- `runtime/alerts/events.jsonl`
+
+### Producer example
+
+```bash
+python tools/alerts/emit_events_from_pg.py \
+  --pg-url "$PG_URL" \
+  --events-jsonl runtime/alerts/events.jsonl \
+  --state runtime/alerts/producer_state.json \
+  --emit-news --emit-health
+```
+
+### End-to-end daemon stack
+
+1) Producer appends events to JSONL
+2) Alert engine tails JSONL and evaluates rules
+3) Fired alerts appended to firelog + dispatched
