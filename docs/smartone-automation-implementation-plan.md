@@ -561,3 +561,178 @@ Reference entry points:
 - https://nautilustrader.io/docs/latest/
 - https://nautilustrader.io/docs/latest/concepts/architecture/
 - https://nautilustrader.io/docs/latest/integrations/
+
+---
+
+## 14) VPS Web-Only Reality: Unified Browser Adapter Strategy
+
+Given current constraints (**no official VPS trading API**), implementation should treat the browser app as the temporary execution/data gateway.
+
+### 14.1 Core decision
+Build one unified component:
+- `VPSWebAdapter` (ports + adapters style)
+  - **Read path**: account sync (positions, cash, orders, fills)
+  - **Write path**: order submit/modify/cancel
+
+This avoids drift between separate scraping and trading bots and ensures identical selector/session handling.
+
+### 14.2 Operational modes
+- `MODE=read_only`
+  - Login/session keepalive
+  - Pull portfolio snapshots periodically
+  - Pull order/fill updates for reconcile
+  - No trade actions allowed
+- `MODE=confirm_trade`
+  - Generates order intents automatically
+  - Requires explicit operator approval before submit
+- `MODE=auto_trade_limited`
+  - Limited symbol allowlist + strict max notional/risk guards
+  - Mandatory reconcile after every state mutation
+
+Default deployment mode: `read_only` then `confirm_trade`.
+
+---
+
+## 15) VPS Web Adapter Specification (Implementation-Ready)
+
+### 15.1 File/module layout
+
+```bash
+trading-automation/src/execution/vps/
+  adapter.py               # public port implementation
+  session.py               # login/session/token/cookie lifecycle
+  selectors.py             # versioned UI selectors map
+  parser.py                # parse positions/orders/fills from DOM tables
+  actions.py               # click/type/submit primitives
+  guards.py                # pre-submit safety checks
+  reconcile.py             # broker-state reconciliation helpers
+```
+
+### 15.2 Public interface
+- `sync_account_state(account_id) -> AccountSnapshot`
+- `sync_open_orders(account_id) -> list[OrderState]`
+- `sync_fills(account_id, since_ns) -> list[FillEvent]`
+- `submit(intent: OrderIntent) -> BrokerAck`
+- `modify(client_order_id, ...) -> BrokerAck`
+- `cancel(client_order_id) -> BrokerAck`
+- `health() -> AdapterHealth`
+
+### 15.3 Session management
+- Session bootstrap at pre-open.
+- Periodic heartbeat check (UI element + account identity check).
+- Auto re-login on expiry with bounded retries.
+- Any auth anomaly => `execution_degraded=true` and stop new orders.
+
+### 15.4 Selector versioning
+- `selectors.py` must support `v1`, `v2`, ... profiles.
+- Runtime loads active selector profile from config.
+- Add canary selector check in `health()` to catch UI changes early.
+
+---
+
+## 16) Account Sync Plan (Portfolio Auto-Tracking for Alerts)
+
+### 16.1 Sync cadence
+- During open sessions: every 30-60s
+- During breaks/off-hours: every 3-10m
+- Forced sync immediately after any order/fill event
+
+### 16.2 Normalized outputs
+Adapter must publish:
+- `portfolio_snapshots(account_id, ts_ns, positions[], cash, nav)`
+- `portfolio_symbols_current(account_id, symbols[], updated_at)`
+- `execution_updates` and `fill_events`
+
+These feed:
+- alert scope resolver (`symbol_selector: portfolio`)
+- risk engine
+- reconcile engine
+
+### 16.3 Staleness policy
+- If account sync stale beyond threshold (e.g. 90s market hours):
+  - Fire critical ops alert
+  - Pause portfolio-scoped trading rules
+  - Keep read-only recovery loop active
+
+---
+
+## 17) Trading Automation on Web App (Safe-by-Design)
+
+### 17.1 Pre-submit guard chain (must pass all)
+1. Market session gate open
+2. Portfolio/account sync fresh
+3. Price tick and lot normalization pass
+4. Price band and slippage bounds pass
+5. Risk limits pass (symbol, account, daily)
+6. No unresolved reconcile mismatch for symbol/account
+
+### 17.2 Post-submit requirements
+- Immediate ack capture
+- Open-order refresh
+- Fill polling/reconciliation window
+- Emit lifecycle events back to Nautilus bridge
+
+### 17.3 Hard stop triggers
+- Repeated selector failure
+- Login/session instability
+- Elevated reject rate
+- Reconcile mismatch above threshold
+- Daily drawdown breach
+
+Any hard-stop trigger must set `trade_write_disabled=true` until manual clear.
+
+---
+
+## 18) Integration with Alert System (Custom + Portfolio-Aware)
+
+Use the new alert artifacts:
+- `docs/schemas/alert-rule.schema.json`
+- `config/alerts/rules.v1.yaml`
+- `tools/alerts/resolve_alert_scope.py`
+- `tools/alerts/validate_alert_rules.py`
+
+### 18.1 Dynamic coverage model
+- `symbol_selector: watchlist` for thematic coverage
+- `symbol_selector: portfolio` for live holdings coverage
+- `symbol_selector: all` for system-level alerts
+
+### 18.2 Critical execution alerts to enable by default
+- session/auth degraded
+- submit reject spike
+- fill stalled
+- reconcile mismatch
+- account sync stale
+
+---
+
+## 19) Expanded Delivery Roadmap (Web-first)
+
+### Sprint 1 — Read foundation
+- Implement `VPSWebAdapter` read path only
+- Persist `portfolio_snapshots` and `portfolio_symbols_current`
+- Wire portfolio-scoped alert resolution
+
+### Sprint 2 — Confirm-mode trading
+- Implement submit/modify/cancel with guard chain
+- Add confirm workflow and execution audit trail
+- Reconcile loop after each order action
+
+### Sprint 3 — Reliability hardening
+- Selector versioning + canary checks
+- Session recovery policies
+- Synthetic event replay tests for reconcile correctness
+
+### Sprint 4 — Limited auto mode
+- Enable `auto_trade_limited` for allowlisted symbols
+- Strict caps (max notional/day loss/order rate)
+- Incident playbook + on-call style alert escalation
+
+---
+
+## 20) Immediate Next Tasks
+
+1. Implement `src/execution/vps/session.py` + `selectors.py`.
+2. Implement read-only sync to populate portfolio symbol cache.
+3. Connect sync outputs to alert resolver runtime.
+4. Add critical health alerts for adapter/session/sync staleness.
+5. Run 1-week shadow mode before any live write actions.
