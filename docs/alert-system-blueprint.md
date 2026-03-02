@@ -339,7 +339,7 @@ The following starter artifacts are now in-repo:
 - Starter rules pack: `config/alerts/rules.v1.yaml`
 
 Recommended next step:
-- Implement `scripts/validate_alert_rules.py` to validate `rules.v1.yaml` against `alert-rule.schema.json` in CI.
+- Implement `tools/alerts/validate_alert_rules.py` to validate `rules.v1.yaml` against `alert-rule.schema.json` in CI.
 
 ## 18) Dynamic Symbol Resolution (Watchlist + Portfolio Auto-Tracking)
 
@@ -368,3 +368,31 @@ For `symbol_selector: portfolio`:
 - On startup, run full portfolio sync before enabling alert evaluation.
 - If portfolio sync is stale, emit critical ops alert and pause `portfolio`-scoped rules.
 - Keep rule runtime independent from broker adapter by consuming normalized portfolio events.
+
+## 19) Implementation Scripts Added
+
+- `tools/alerts/validate_alert_rules.py`
+  - Validates rule YAML against schema and semantic policy checks.
+- `tools/alerts/resolve_alert_scope.py`
+  - Resolves symbols for each rule based on selector:
+    - `static` from rule symbols,
+    - `watchlist` from `config/alerts/watchlists.json`,
+    - `portfolio` from `config/alerts/portfolio_symbols_current.json`,
+    - `all` wildcard.
+
+Companion config files:
+- `config/alerts/watchlists.json`
+- `config/alerts/portfolio_symbols_current.json`
+
+Suggested CI steps:
+```bash
+python tools/alerts/validate_alert_rules.py \
+  --rules config/alerts/rules.v1.yaml \
+  --schema docs/schemas/alert-rule.schema.json
+
+python tools/alerts/resolve_alert_scope.py \
+  --rules config/alerts/rules.v1.yaml \
+  --watchlists config/alerts/watchlists.json \
+  --portfolio config/alerts/portfolio_symbols_current.json \
+  --account primary
+```
