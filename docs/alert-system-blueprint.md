@@ -754,3 +754,30 @@ python tools/alerts/daemon_health.py --pg-url "$PG_URL"
 # view logs
 tools/alerts/daemon_ctl.sh logs
 ```
+
+## 26) Service Templates + Dead-Letter Replay (Implemented)
+
+### Added files
+- `deploy/alerts/alert-daemon.systemd.service`
+- `deploy/nomad/jobs/vietmarket-alert-daemon.nomad.hcl`
+- `tools/alerts/replay_dead_letters.py`
+
+### Dead-letter replay usage
+
+```bash
+# replay last 100 dead letters
+python tools/alerts/replay_dead_letters.py \
+  --dead-letter runtime/alerts/dead_letters.jsonl \
+  --channels config/alerts/channels.json \
+  --limit 100
+
+# replay only telegram and truncate after attempt
+python tools/alerts/replay_dead_letters.py \
+  --channel telegram \
+  --truncate
+```
+
+### Suggested ops routine
+1. Keep daemon running under systemd or Nomad template.
+2. Run `daemon_health.py` from monitoring every 1-5 minutes.
+3. Replay dead letters periodically (or on demand) after fixing channel credentials.
