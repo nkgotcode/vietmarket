@@ -1,7 +1,17 @@
 {
-  "telegram": {"target": "self"},
-  "discord": {"target": "ops"},
+  "telegram": {
+    "bot_token": "",
+    "chat_id": "",
+    "dead_letter": "runtime/alerts/dead_letters.jsonl"
+  },
+  "discord": {
+    "webhook_url": "",
+    "dead_letter": "runtime/alerts/dead_letters.jsonl"
+  },
   "email": {},
   "sms": {},
-  "webhook": {"url": ""}
+  "webhook": {
+    "url": "",
+    "dead_letter": "runtime/alerts/dead_letters.jsonl"
+  }
 }

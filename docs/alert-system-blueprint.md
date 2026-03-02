@@ -712,3 +712,45 @@ python tools/alerts/emit_events_from_pg.py \
 - Daemon replays pending/error events on startup.
 - Stuck `processing` rows (>5m) are reset to `pending` during replay.
 - Each event tracks attempts and last_error.
+
+## 25) Ops Hardening + Real Channel Delivery (Implemented)
+
+### 25.1 Daemon operations scripts
+
+Added:
+- `tools/alerts/daemon_ctl.sh`
+  - `start|stop|restart|status|logs`
+  - manages PID + log files under `runtime/alerts/`
+- `tools/alerts/daemon_health.py`
+  - checks queue health (`pending`, `error`, `stuck_processing`)
+  - exits non-zero when unhealthy
+
+### 25.2 Real channel delivery adapters
+
+`tools/alerts/engine/dispatch.py` now supports:
+- Telegram Bot API (`sendMessage`)
+- Discord webhook
+- Generic webhook
+- dead-letter JSONL on failed sends
+
+Config file:
+- `config/alerts/channels.json`
+
+Optional env overrides:
+- `ALERT_TELEGRAM_BOT_TOKEN`
+- `ALERT_TELEGRAM_CHAT_ID`
+- `ALERT_DISCORD_WEBHOOK_URL`
+- `ALERT_WEBHOOK_URL`
+
+### 25.3 Quick ops commands
+
+```bash
+# start daemon
+PG_URL="$PG_URL" tools/alerts/daemon_ctl.sh start
+
+# health check
+python tools/alerts/daemon_health.py --pg-url "$PG_URL"
+
+# view logs
+tools/alerts/daemon_ctl.sh logs
+```
