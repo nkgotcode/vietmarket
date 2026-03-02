@@ -505,3 +505,163 @@ python tools/alerts/emit_events_from_pg.py \
 1) Producer appends events to JSONL
 2) Alert engine tails JSONL and evaluates rules
 3) Fired alerts appended to firelog + dispatched
+
+## 23) Event-Driven Daemon Mode (No Polling) — Planned Design
+
+User requirement: **no polling**; process live data immediately when it enters the system.
+
+### 23.1 Target architecture
+
+```text
+[Ingest / Derived jobs / Broker sync]
+          |
+          |  (same TX)
+          +--> INSERT alert_events (durable queue)
+          +--> NOTIFY alert_events, <event_id>
+
+[Alert Daemon]
+  LISTEN alert_events
+     -> fetch event by id
+     -> evaluate rules
+     -> dispatch alerts
+     -> mark processed
+
+[Recovery path]
+  On daemon startup:
+    replay unprocessed rows from alert_events
+```
+
+### 23.2 Why this design
+- Real-time reaction without periodic polling loops.
+- Durable queue prevents event loss during daemon restarts.
+- Clear at-least-once processing semantics.
+- Fits current Postgres-centric architecture with minimal new infrastructure.
+
+---
+
+## 24) Data Model for Event-Driven Mode
+
+### 24.1 `alert_events` table
+
+```sql
+CREATE TABLE IF NOT EXISTS alert_events (
+  id                BIGSERIAL PRIMARY KEY,
+  event_id          TEXT UNIQUE NOT NULL,
+  event_type        TEXT NOT NULL,
+  source            TEXT NOT NULL,
+  symbol            TEXT NULL,
+  tf                TEXT NULL,
+  account_id        TEXT NULL,
+  venue             TEXT NULL,
+  ts_ns             BIGINT NOT NULL,
+  payload           JSONB NOT NULL,
+  tags              JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  processing_state  TEXT NOT NULL DEFAULT 'pending', -- pending|processing|done|error
+  attempts          INT NOT NULL DEFAULT 0,
+  last_error        TEXT NULL,
+  processed_at      TIMESTAMPTZ NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_alert_events_state_created
+  ON alert_events (processing_state, created_at);
+```
+
+### 24.2 `alert_daemon_offsets` (optional)
+
+```sql
+CREATE TABLE IF NOT EXISTS alert_daemon_offsets (
+  daemon_name  TEXT PRIMARY KEY,
+  last_event_pk BIGINT NOT NULL,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+Use only if needed; `processing_state` model is usually sufficient.
+
+---
+
+## 25) Emit Path (Ingest/Derived Integration)
+
+### 25.1 Emission contract
+Every producer emits normalized events by:
+1. Insert into `alert_events`
+2. `NOTIFY alert_events, '<event_id>'`
+
+Both should occur in the same transaction when possible.
+
+### 25.2 Producers to wire
+1. Derived indicator sync job -> `indicator.update`
+2. News ingestion/linking job -> `news.item`
+3. Health metrics update job -> `system.health`
+4. Portfolio/execution sync (later) -> `portfolio.update`, `execution.update`
+
+---
+
+## 26) Daemon Runtime Design
+
+### 26.1 Main loop
+1. Startup replay:
+   - fetch `pending/error` events (bounded batch)
+   - process + mark state
+2. Enter LISTEN loop:
+   - wait for NOTIFY payload (`event_id`)
+   - fetch event row
+   - process with alert engine
+   - update state to `done` or `error`
+
+### 26.2 Reliability behaviors
+- Mark row as `processing` with attempt increment.
+- On crash, stale `processing` rows older than threshold return to `pending`.
+- Dead-letter policy after N attempts (retain row, state=`error`).
+- Idempotent processing by `event_id` + rule state store.
+
+### 26.3 Performance targets
+- p95 ingest-to-alert latency < 1s (local PG)
+- Throughput target: 100+ events/sec initial
+- Alert dispatch path non-blocking with bounded retry workers
+
+---
+
+## 27) Migration Plan from Current JSONL Producer
+
+### Step 1
+Keep current JSONL mode as fallback.
+
+### Step 2
+Add `alert_events` table and dual-write:
+- existing JSONL append + new DB event insert/notify.
+
+### Step 3
+Deploy LISTEN daemon in shadow mode:
+- evaluate and log only, no dispatch.
+
+### Step 4
+Switch primary runtime to LISTEN daemon.
+
+### Step 5
+Disable JSONL producer for normal operation (retain emergency fallback).
+
+---
+
+## 28) Security & Operational Controls
+
+- Restrict DB role for daemon to only required tables/channels.
+- Validate payload schema before insert into `alert_events`.
+- Rate-limit NOTIFY flood by producer-side coalescing where needed.
+- Keep full fire audit in `fires` log/table.
+
+---
+
+## 29) Implementation Tasks (Next)
+
+1. Add SQL migration for `alert_events` (+ optional offsets table).
+2. Add helper in producer modules to insert + notify atomically.
+3. Implement `tools/alerts/run_alert_daemon.py` (LISTEN mode).
+4. Implement replay/recovery and error-state transitions.
+5. Add integration tests for:
+   - immediate NOTIFY processing,
+   - missed-notify replay,
+   - crash recovery of `processing` rows,
+   - idempotent duplicate event handling.
+
