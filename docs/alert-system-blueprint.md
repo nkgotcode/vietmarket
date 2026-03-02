@@ -437,3 +437,36 @@ python tools/alerts/run_alert_engine.py \
   --event-file config/alerts/samples/event.breakout.vcb.json \
   --state runtime/alerts/state.json
 ```
+
+## 21) Daemon + Fire Audit (Implemented)
+
+Runtime now supports:
+
+- **One-shot mode**: `--event-file <json>`
+- **Daemon mode**: `--events-jsonl <path>` (tail-follow JSONL event stream)
+- **Persistent fire audit**: appends all fired alerts to `runtime/alerts/fires.jsonl`
+
+New helper:
+- `tools/alerts/replay_firelog.py`
+  - Summarizes fire history and recent events
+  - Supports `--rule-id` filter
+
+### Daemon example
+
+```bash
+python tools/alerts/run_alert_engine.py \
+  --rules config/alerts/rules.v1.yaml \
+  --watchlists config/alerts/watchlists.json \
+  --portfolio config/alerts/portfolio_symbols_current.json \
+  --channels config/alerts/channels.json \
+  --events-jsonl runtime/alerts/events.jsonl \
+  --state runtime/alerts/state.json \
+  --firelog runtime/alerts/fires.jsonl
+```
+
+### Replay example
+
+```bash
+python tools/alerts/replay_firelog.py --firelog runtime/alerts/fires.jsonl
+python tools/alerts/replay_firelog.py --firelog runtime/alerts/fires.jsonl --rule-id R001_price_breakout_volume
+```
