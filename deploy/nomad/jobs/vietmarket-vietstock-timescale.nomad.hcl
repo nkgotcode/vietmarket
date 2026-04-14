@@ -32,13 +32,10 @@ job "vietmarket-vietstock-timescale" {
       }
 
       env {
-        PG_URL = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
-        CONVEX_URL = ""
+        PG_URL = "postgres://vietmarket:***@100.83.150.39:5433/vietmarket?sslmode=disable"
 
-        # TODO: set real Vietstock RSS feeds (space-separated)
-        # Example:
-        # VIETSTOCK_RSS_FEEDS = "https://vietstock.vn/rss/tin-moi-nhat.rss https://vietstock.vn/rss/chung-khoan.rss"
-        VIETSTOCK_RSS_FEEDS = ""
+        # Active Vietstock RSS feeds
+        VIETSTOCK_RSS_FEEDS = "https://vietstock.vn/rss/tin-moi-nhat.rss https://vietstock.vn/rss/chung-khoan.rss"
 
         LIMIT = "30"
         SLEEP = "0.2"

@@ -119,22 +119,9 @@ This setup currently uses **TCP checks** to Postgres. That means HAProxy will ro
 
 In practice, Patroni should keep only the leader accepting writes, but for strict leader-only routing you can upgrade the HAProxy check to a SQL check (e.g. verify `pg_is_in_recovery() = false`) or restore Patroni-REST-based checks when 8008 is reachable locally.
 
-## Convex usage note
+## Runtime note
 
-If Convex free-tier limits are exceeded and deployments get disabled, you can run the app in **Timescale-only** mode for candles:
-
-- Stop the Nomad Convex candle jobs:
-  - `nomad job stop -purge vietmarket-candles-latest`
-  - `nomad job stop -purge vietmarket-candles-backfill`
-- Point the Next.js chart loader at History API via:
-  - `NEXT_PUBLIC_HISTORY_API_URL`
-  - `NEXT_PUBLIC_HISTORY_API_KEY`
-
-To make routing strictly leader-only, we have two options:
-1) Ensure Patroni REST `:8008` is reachable by HAProxy (local checks), and use Patroni role-based checks.
-2) Use a Postgres-aware health check (SQL) that validates `pg_is_in_recovery()` is false.
-
-If strict RW routing is required, we should implement option (2) next.
+The current app/runtime is fully Timescale/Postgres-backed for history and supervisor state. If strict write routing is required, we should still upgrade HAProxy checks to validate leader role directly.
 
 ## Troubleshooting
 
@@ -164,5 +151,5 @@ Fix:
 ## Notes / Findings (from setup)
 
 - ClickHouse setup was blocked by Nomad docker volume restrictions + container startup perms.
-- Convex free tier can disable deployments entirely; workers must handle `{status:"error"}` responses.
+- Keep background workers and app reads resilient to upstream source outages even though the canonical runtime store is Timescale/Postgres.
 - For public API, Tailscale Funnel is simpler than exposing DB or using Cloudflare Workers.

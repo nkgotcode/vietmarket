@@ -21,6 +21,51 @@ export default function AppHome() {
         <li>
           <Link href="/app/symbol/VCB">Symbol page</Link>
         </li>
+        <li>
+          <Link href="/app/health">Control plane health</Link>
+        </li>
+        <li>
+          <Link href="/app/regime">Market regime</Link>
+        </li>
+        <li>
+          <Link href="/app/watchlist">Supervisor watchlist</Link>
+        </li>
+        <li>
+          <Link href="/app/signals">Signal engine</Link>
+        </li>
+        <li>
+          <Link href="/app/recommendations">Recommendations</Link>
+        </li>
+        <li>
+          <Link href="/app/briefing">Briefing</Link>
+        </li>
+        <li>
+          <Link href="/app/portfolio">Portfolio</Link>
+        </li>
+        <li>
+          <Link href="/app/orders">Orders</Link>
+        </li>
+        <li>
+          <Link href="/app/journal">Journal</Link>
+        </li>
+        <li>
+          <Link href="/app/alerts">Alerts</Link>
+        </li>
+        <li>
+          <Link href="/app/system">System</Link>
+        </li>
+        <li>
+          <Link href="/app/evaluation">Evaluation</Link>
+        </li>
+        <li>
+          <Link href="/app/delivery">Delivery</Link>
+        </li>
+        <li>
+          <Link href="/app/execution">Execution</Link>
+        </li>
+        <li>
+          <Link href="/app/ticker-state/VCB">Ticker state</Link>
+        </li>
       </ul>
 
       <MarketOverviewClient />

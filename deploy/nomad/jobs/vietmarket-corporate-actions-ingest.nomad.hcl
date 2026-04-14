@@ -16,6 +16,7 @@ job "vietmarket-corporate-actions-ingest" {
   group "ingest" {
     count = 1
 
+    # Temporarily target OptiPlex until EPYC image-pull timeouts are fixed.
     constraint {
       attribute = "${node.unique.name}"
       value     = "optiplex"
@@ -26,7 +27,7 @@ job "vietmarket-corporate-actions-ingest" {
 
       config {
         image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
-        force_pull = true
+        force_pull = false
         entrypoint = ["python3", "/app/packages/ingest/vietstock/vietstock_events_to_timescale.py"]
       }
 

@@ -49,7 +49,7 @@ export default function ChartDemoPage() {
   return (
     <main style={{ maxWidth: 1100, margin: '24px auto', padding: 24, fontFamily: 'system-ui' }}>
       <h1 style={{ marginTop: 0 }}>KLineChart demo</h1>
-      <p style={{ color: '#666' }}>This is a placeholder. Next step: load OHLCV from Convex.</p>
+      <p style={{ color: '#666' }}>This is a placeholder. Next step: load OHLCV from the Timescale/Postgres history layer.</p>
       <div
         ref={elRef}
         style={{ height: 520, border: '1px solid #ddd', borderRadius: 12, overflow: 'hidden' }}

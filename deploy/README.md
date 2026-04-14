@@ -8,6 +8,9 @@ This folder contains deployment/runbook docs for VietMarket’s infrastructure:
 
 If you’re looking for "what do I run next", start here.
 
+Control-plane health (Phase 1 supervisor foundation) runbook:
+- `docs/operations/phase1-control-plane-runbook.md`
+
 ---
 
 ## 1) Nomad Cluster (Topology + Jobs)
@@ -32,7 +35,7 @@ Located in: `deploy/nomad/jobs/`
   - `vietmarket-candles-latest.nomad.hcl` (periodic)
   - `vietmarket-candles-backfill.nomad.hcl` (periodic; currently 1D only)
 - News:
-  - `vietmarket-news.nomad.hcl` (Vietstock → Convex)
+  - `vietmarket-vietstock-timescale.nomad.hcl` (Vietstock RSS/archive discovery + fetch into Timescale/Postgres)
 - HA DB:
   - `etcd.nomad.hcl` (3-node DCS: optiplex + epyc + mac mini)
   - `timescaledb-ha.nomad.hcl` (2-node DB: optiplex + epyc)
@@ -78,7 +81,7 @@ Full runbook:
 
 ## 3) Public History API (Vultr + Docker)
 
-**Goal:** serve deep candle history for infinite scroll without putting full history in Convex.
+**Goal:** serve deep candle history and market-state APIs directly from the Timescale/Postgres canonical store.
 
 ### Summary
 
@@ -114,37 +117,33 @@ Key finding:
 
 ---
 
-## 5) Hybrid Candles Architecture (Convex cache + Timescale canonical)
+## 5) Timescale/Postgres Candles Architecture
 
 ### Current state
 
-- Convex currently stores candles slices and is easy to overrun on the free tier.
-- Timescale HA + History API are now the intended canonical store + deep-scroll path.
+- Timescale HA + History API are the intended canonical store + deep-scroll path.
+- The web app and supervisor surfaces should read market context from Timescale/Postgres-backed APIs.
 
 ### Target state
 
-- **TimescaleDB HA**: canonical full candles history
-- **Convex**: bounded “latest slice” cache for UI speed/cost control
+- **TimescaleDB HA**: canonical full candles history and supervisor data store
 - **History API**: paging endpoint to fetch older candles (`beforeTs`, `limit`)
+- **Next.js app**: reads history + market-state APIs backed by Timescale/Postgres
 
-### Next implementation tasks (dual-write)
+### Next implementation tasks
 
-> These are not fully implemented yet; this section is the checklist we will follow.
-
-1) Ingestion: dual-write candles (optional)
-   - Always upsert full history to Timescale (idempotent `PRIMARY KEY (ticker,tf,ts)`)
-   - If Convex is under heavy limits, skip Convex entirely and serve candles from History API
+1) Keep ingestion Timescale/Postgres-only
+   - Upsert full history to Timescale with idempotent primary keys.
+   - Use supervisor tables for derived market-state instead of side caches.
 
 2) History API: ensure paging matches UI
    - Endpoint already supports: `GET /candles?ticker&tf&beforeTs&limit`
    - Return newest-first; UI can reverse or append
 
 3) Next.js chart loader
-   - Load most recent from Convex
-   - Page older from History API
+   - Read current/latest data from history/market-state APIs
+   - Page older history from History API
 
-4) Disable/limit Convex-heavy backfills
-   - keep latest ingestion minimal until Convex plan upgraded
 
 ---
 

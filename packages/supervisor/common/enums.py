@@ -1,0 +1,13 @@
+RUN_STATUS_RUNNING = 'running'
+RUN_STATUS_COMPLETE = 'complete'
+RUN_STATUS_FAILED = 'failed'
+RUN_STATUS_PARTIAL = 'partial'
+
+FRESHNESS_FRESH = 'fresh'
+FRESHNESS_LAGGING = 'lagging'
+FRESHNESS_STALE = 'stale'
+FRESHNESS_UNKNOWN = 'unknown'
+
+SEVERITY_INFO = 'info'
+SEVERITY_WARNING = 'warning'
+SEVERITY_CRITICAL = 'critical'

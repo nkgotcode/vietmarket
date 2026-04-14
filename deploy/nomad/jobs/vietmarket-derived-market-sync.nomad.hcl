@@ -11,9 +11,11 @@ job "vietmarket-derived-market-sync" {
   group "sync" {
     count = 1
 
+    # Run on OptiPlex, but execute the current checked-out repo from a bind mount
+    # so we are not blocked on stale image contents.
     constraint {
       attribute = "${node.unique.name}"
-      value     = "epyc"
+      value     = "optiplex"
     }
 
     task "derived_sync" {
@@ -23,7 +25,8 @@ job "vietmarket-derived-market-sync" {
         image      = "ghcr.io/nkgotcode/vietmarket-ingest:main"
         force_pull = false
         command    = "python3"
-        args       = ["packages/ingest/vn/derived_market_sync_pg.py"]
+        args       = ["/src/packages/ingest/vn/derived_market_sync_pg.py"]
+        volumes    = ["/home/itsnk/vietmarket:/src"]
       }
 
       env {

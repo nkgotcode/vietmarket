@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'vietstock-market',
-  description: 'Vietstock + market context (Clerk + Convex)',
+  description: 'Vietstock + Timescale/Postgres-backed market context',
 };
 
 export default function RootLayout({
@@ -23,13 +23,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return (
-    <ClerkProvider>
-      <html lang="en">
-        <body className={`${geistSans.variable} ${geistMono.variable}`}>
-          {children}
-        </body>
-      </html>
-    </ClerkProvider>
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const body = (
+    <html lang="en">
+      <body className={`${geistSans.variable} ${geistMono.variable}`}>{children}</body>
+    </html>
   );
+
+  if (!publishableKey) {
+    return body;
+  }
+
+  return <ClerkProvider publishableKey={publishableKey}>{body}</ClerkProvider>;
 }

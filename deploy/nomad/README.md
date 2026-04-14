@@ -41,7 +41,7 @@ Notes:
   - Script: `packages/ingest/vn/derived_market_sync_pg.py`
 
 ### News
-- `jobs/vietmarket-news.nomad.hcl` — Vietstock archive → Convex sync
+- `jobs/vietmarket-vietstock-timescale.nomad.hcl` — Vietstock RSS/archive discovery + fetch into Timescale/Postgres
 
 ### History DB (Timescale HA)
 See: `HA_TIMESCALE_RUNBOOK.md`
@@ -52,7 +52,7 @@ See: `HA_TIMESCALE_RUNBOOK.md`
 
 ## Env / Config notes
 
-- Convex URL: `https://opulent-hummingbird-838.convex.cloud`
+- Timescale/Postgres is the canonical runtime store for candles, articles, and supervisor state.
 - Mac mini should remain **client-only** (no server).
 - Prefer using **meta constraints** to target Mac mini (e.g. `meta.role=witness`).
 
@@ -70,7 +70,7 @@ Full intraday backfill can grow very large. Prefer efficient query patterns (key
 
 - Nomad Docker driver may block host mounts unless docker volumes are enabled in client config.
 - Stateful services require correct host dir permissions (`/opt/...`).
-- Convex free plan can disable deployments; ingestion/repair workers should handle `{status:"error"}` HTTP responses gracefully.
+- Keep periodic ingestion jobs Timescale/Postgres-only so scheduler behavior is independent of external cache services.
 
 ## Quick verification
 

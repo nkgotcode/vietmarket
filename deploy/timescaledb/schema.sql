@@ -1,6 +1,6 @@
 -- VietMarket canonical TimescaleDB schema
 -- Goals:
--- - Compatible with Convex candles (unix ms timestamps, same field names)
+-- - Canonical unix-ms candle storage shared across ingest, APIs, and supervisor state
 -- - Compatible with Vietstock archive metadata
 -- - Efficient paging queries for chart scroll + common lookups
 
@@ -10,7 +10,7 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 -- Candles (canonical full history)
 -------------------------------------------------------------------------------
 
--- Note: we intentionally store ts as BIGINT unix milliseconds to match Convex.
+-- Note: we intentionally store ts as BIGINT unix milliseconds to keep the ingest and API layers consistent.
 CREATE TABLE IF NOT EXISTS candles (
   ticker      TEXT   NOT NULL,
   tf          TEXT   NOT NULL CHECK (tf IN ('1d','1h','15m')),
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS symbols (
   name       TEXT NULL,
   exchange   TEXT NULL,
   active     BOOLEAN NULL,
-  updated_at BIGINT NULL -- unix ms (Convex-compatible)
+  updated_at BIGINT NULL -- unix ms
 );
 
 -- Lookup by exchange/active if you later need it

@@ -10,17 +10,6 @@ export type HistoryApiCandle = {
   source: string | null;
 };
 
-function getBaseUrl() {
-  // We proxy through Next.js Route Handler so the API key stays server-side.
-  // This route is protected by Clerk auth.
-  return '';
-}
-
-function getApiKey() {
-  // API key is server-side only; browser never sees it.
-  return '';
-}
-
 export type LatestRow = { ticker: string; tf: TF; ts: number; c: number | null; o: number | null; h: number | null; l: number | null; v: number | null; source: string | null; ingested_at: string | null };
 export type TopMoverRow = { ticker: string; tf: TF; ts_latest: number; close_latest: number | null; close_prev: number | null; pct_change: number | null };
 export type NewsRow = { url: string; title: string; source: string; published_at: string | null; tickers?: string[]; snippet?: string | null };

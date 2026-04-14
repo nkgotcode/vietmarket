@@ -11,10 +11,11 @@ job "vietmarket-fi-latest-sync-timescale" {
   group "sync" {
     count = 1
 
-    # Run on Mac mini witness where simplize.db lives.
+    # Run on the macmini directly. The old witness meta-role no longer exists,
+    # which leaves this periodic job permanently pending with no allocations.
     constraint {
-      attribute = "${meta.role}"
-      value     = "witness"
+      attribute = "${node.unique.name}"
+      value     = "macmini"
     }
 
     task "fi_latest_sync" {

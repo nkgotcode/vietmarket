@@ -41,7 +41,6 @@ job "vietmarket-candles-timescale-backfill" {
 
       env {
         PG_URL = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
-        CONVEX_URL = ""
 
         NODE_ID       = "optiplex"
         JOB_NAME      = "candles_backfill_1d"
@@ -58,6 +57,11 @@ job "vietmarket-candles-timescale-backfill" {
         RUN_TIMEOUT_SEC = "3600"
 
         CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
+
+        SMART_START_FROM_DB = "1"
+        SMART_OVERLAP_DAYS_1D  = "7"
+        SMART_OVERLAP_DAYS_1H  = "3"
+        SMART_OVERLAP_DAYS_15M = "2"
       }
 
       resources {
@@ -89,7 +93,6 @@ job "vietmarket-candles-timescale-backfill" {
 
       env {
         PG_URL = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
-        CONVEX_URL = ""
 
         NODE_ID       = "epyc"
         JOB_NAME      = "candles_backfill_1d"
@@ -106,6 +109,11 @@ job "vietmarket-candles-timescale-backfill" {
         RUN_TIMEOUT_SEC = "3600"
 
         CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
+
+        SMART_START_FROM_DB = "1"
+        SMART_OVERLAP_DAYS_1D  = "7"
+        SMART_OVERLAP_DAYS_1H  = "3"
+        SMART_OVERLAP_DAYS_15M = "2"
       }
 
       resources {

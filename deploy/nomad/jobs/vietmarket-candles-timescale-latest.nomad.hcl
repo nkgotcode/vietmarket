@@ -37,9 +37,6 @@ job "vietmarket-candles-timescale-latest" {
         # Timescale HAProxy (RW endpoint)
         PG_URL = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
 
-        # Convex disabled in Timescale-only mode
-        CONVEX_URL = ""
-
         # Universe source: Timescale symbols table (full market coverage)
         UNIVERSE_MODE  = "pg"
         UNIVERSE_WHERE = "(exchange IN ('HOSE','HNX','UPCOM') OR exchange IS NULL) AND (active IS TRUE OR active IS NULL)"
@@ -61,6 +58,11 @@ job "vietmarket-candles-timescale-latest" {
         START_15M = "2026-02-01"
 
         CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
+
+        SMART_START_FROM_DB = "1"
+        SMART_OVERLAP_DAYS_1D  = "7"
+        SMART_OVERLAP_DAYS_1H  = "3"
+        SMART_OVERLAP_DAYS_15M = "2"
       }
 
       resources {
@@ -71,7 +73,10 @@ job "vietmarket-candles-timescale-latest" {
   }
 
   group "standby_latest" {
-    count = 10
+    # EPYC is currently unhealthy for large GHCR image pulls, which leaves this
+    # standby group in repeated failed allocations. Keep the definition for easy
+    # future re-enable, but disable scheduling until EPYC image pulls are fixed.
+    count = 0
 
     constraint {
       attribute = "${node.unique.name}"
@@ -89,7 +94,6 @@ job "vietmarket-candles-timescale-latest" {
 
       env {
         PG_URL = "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable"
-        CONVEX_URL = ""
 
         UNIVERSE_MODE  = "pg"
         UNIVERSE_WHERE = "(exchange IN ('HOSE','HNX','UPCOM') OR exchange IS NULL) AND (active IS TRUE OR active IS NULL)"
@@ -111,6 +115,11 @@ job "vietmarket-candles-timescale-latest" {
         START_15M = "2026-02-01"
 
         CURSOR_DIR = "/opt/nomad/data/vietmarket-cursors"
+
+        SMART_START_FROM_DB = "1"
+        SMART_OVERLAP_DAYS_1D  = "7"
+        SMART_OVERLAP_DAYS_1H  = "3"
+        SMART_OVERLAP_DAYS_15M = "2"
       }
 
       resources {

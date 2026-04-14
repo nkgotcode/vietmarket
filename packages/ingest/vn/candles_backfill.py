@@ -1,25 +1,18 @@
 #!/usr/bin/env python3
-"""Backfill VN candles (1D/1H/15m) from public VCI provider via vnstock -> Convex.
+"""Backfill VN candles (1D/1H/15m) from public VCI provider via vnstock into Timescale/Postgres.
 
-This is the "B" plan: use a public VN data source for candles, keep Simplize for fundamentals.
+This is the Timescale/Postgres-only candle backfill path.
 
 Requirements:
-- Run from repo root with venv: ./.venv
-- pip install vnstock pytz (already installed in ./ .venv)
+- Run from repo root with Python available.
+- Install vnstock and psycopg2-compatible dependencies in the active environment.
 
 Env:
-- CONVEX_URL or NEXT_PUBLIC_CONVEX_URL (e.g. https://opulent-hummingbird-838.convex.cloud)
+- PG_URL (required)
 
 Usage examples:
-  . .venv/bin/activate
-  python scripts/vietmarket_candles_backfill.py --tickers VCB,FPT --tfs 1d,1h,15m --start 2000-01-01
-
-  python scripts/vietmarket_candles_backfill.py --universe data/simplize/universe.latest.json --tfs 1d --start 2000-01-01 --limit-tickers 50
-
-Notes:
-- Convex mutation path: candles:upsertMany
-- We currently call the mutation without admin auth. If you want to lock it down,
-  we can add an ingest-only auth token check in Convex.
+  python packages/ingest/vn/candles_backfill.py --tickers VCB,FPT --tfs 1d,1h,15m --start 2000-01-01
+  python packages/ingest/vn/candles_backfill.py --universe data/simplize/universe.latest.json --tfs 1d --start 2000-01-01 --limit-tickers 50
 """
 
 from __future__ import annotations
@@ -31,13 +24,9 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import Iterable
 
-import requests
 from vnstock import Vnstock
 
-# Ensure repo root is importable when executed as a script (Nomad/Docker).
-# When running `python path/to/script.py`, Python does NOT automatically add CWD to sys.path.
 try:
     from pathlib import Path
     _root = Path(os.environ.get('VIETMARKET_ROOT', '')).resolve() if os.environ.get('VIETMARKET_ROOT') else None
@@ -46,8 +35,6 @@ try:
 except Exception:
     pass
 
-# Suppress vnstock startup banners / upgrade nags.
-# vnstock prints directly to stdout; this env is honored by recent versions.
 os.environ.setdefault('VNSTOCK_SILENT', '1')
 
 
@@ -59,8 +46,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument('--tfs', default='1d,1h,15m', help='Timeframes: 1d,1h,15m (comma-separated).')
     p.add_argument('--start', default='2000-01-01', help='Start date (YYYY-MM-DD)')
     p.add_argument('--end', default=None, help='End date (YYYY-MM-DD) optional')
-    p.add_argument('--chunk', type=int, default=1000, help='Candles per Convex call')
-    p.add_argument('--sleep', type=float, default=0.15, help='Sleep seconds between Convex calls')
+    p.add_argument('--chunk', type=int, default=1000, help='Candles per PG batch')
+    p.add_argument('--sleep', type=float, default=0.15, help='Sleep seconds between PG calls')
     p.add_argument('--include-indices', action='store_true', default=True, help='Include VN indices (VNINDEX/HNXINDEX/UPCOMINDEX)')
     p.add_argument('--exclude-indices', action='store_true', help='Do not include indices (useful for intraday)')
     p.add_argument('--dry-run', action='store_true')
@@ -82,16 +69,12 @@ def load_tickers(args: argparse.Namespace) -> list[str]:
             tickers = [t.strip().upper() for t in text.split() if t.strip()]
 
     include_indices = args.include_indices and (not args.exclude_indices)
-
-    # add a few VN indices (vnstock expects names containing INDEX)
-    # We'll start with the common ones; adjust later if needed.
     if include_indices:
         idx = ['VNINDEX', 'HNXINDEX', 'UPCOMINDEX']
         for x in idx:
             if x not in tickers:
                 tickers.append(x)
 
-    # uniq preserve order
     seen = set()
     out = []
     for t in tickers:
@@ -117,35 +100,14 @@ def tf_to_interval(tf: str) -> str:
 
 
 def ts_to_ms(x) -> int:
-    # vnstock returns pandas timestamps in either date or datetime; stringify and parse.
     if isinstance(x, (int, float)):
-        # assume seconds
         return int(x) * 1000
     s = str(x)
-    # handle 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS'
     if len(s) == 10:
         dt = datetime.strptime(s, '%Y-%m-%d')
     else:
         dt = datetime.strptime(s, '%Y-%m-%d %H:%M:%S')
     return int(dt.timestamp() * 1000)
-
-
-def convex_url() -> str:
-    u = os.environ.get('CONVEX_URL') or os.environ.get('NEXT_PUBLIC_CONVEX_URL')
-    if not u:
-        raise RuntimeError('Missing CONVEX_URL or NEXT_PUBLIC_CONVEX_URL')
-    return u.rstrip('/')
-
-
-def has_pg() -> bool:
-    return bool(os.environ.get('PG_URL'))
-
-
-def convex_mutation(path: str, args: dict) -> dict:
-    url = convex_url() + '/api/mutation'
-    r = requests.post(url, json={'path': path, 'args': args}, timeout=60)
-    r.raise_for_status()
-    return r.json()
 
 
 def chunked(xs: list, n: int):
@@ -160,31 +122,25 @@ def fetch_candles_vci(symbol: str, interval: str, start: str, end: str | None, *
     last_err = None
     for attempt in range(max_retries + 1):
         try:
-            # vnstock requires start or length; we always pass start.
             df = q.history(symbol=symbol, start=start, end=end, interval=interval)
             return df
         except Exception as e:
             last_err = e
             msg = str(e)
-            # vnstock/VCI occasionally returns a Vietnamese rate limit message.
             is_rl = ('Rate Limit' in msg) or ('GIỚI HẠN API' in msg) or ('20 requests' in msg)
             if is_rl and attempt < max_retries:
-                # Backoff ~15s, 30s, 45s...
                 sleep_s = 15 * (attempt + 1)
                 time.sleep(sleep_s)
                 continue
             raise
 
-    raise last_err  # pragma: no cover
+    raise last_err
 
 
 def suppress_vnstock_info_logs() -> None:
-    """vnstock is very chatty (banners + INFO logs); suppress to keep Nomad logs readable."""
     import logging
 
-    # Root/basic config can still emit; reduce overall noise too.
     logging.getLogger().setLevel(logging.ERROR)
-
     for name in [
         'vnstock',
         'vnstock.common.data',
@@ -213,7 +169,9 @@ def main(argv: list[str]) -> int:
         'dryRun': args.dry_run,
     }, indent=2))
 
-    for ti, ticker in enumerate(tickers):
+    from packages.ingest.db.pg import upsert_candles
+
+    for ticker in tickers:
         for tf in tfs:
             interval = tf_to_interval(tf)
             try:
@@ -222,7 +180,6 @@ def main(argv: list[str]) -> int:
                 print(f'ERROR fetch {ticker} {tf}: {e}', file=sys.stderr)
                 continue
 
-            # drop NaNs
             rows = []
             for _, r in df.iterrows():
                 o = r.get('open')
@@ -245,32 +202,14 @@ def main(argv: list[str]) -> int:
             if args.dry_run:
                 continue
 
-            # upsert in chunks
             for batch in chunked(rows, args.chunk):
-                if has_pg():
-                    try:
-                        from packages.ingest.db.pg import upsert_candles
-                        n = upsert_candles(ticker=ticker, tf=tf, rows=batch)
-                        print(f'  pg upserted: {n}')
-                    except Exception as e:
-                        print(f'ERROR pg upsert {ticker} {tf}: {e}', file=sys.stderr)
-                        break
-                else:
-                    payload = {
-                        'ticker': ticker,
-                        'tf': tf,
-                        'candles': batch,
-                    }
-                    try:
-                        out = convex_mutation('candles:upsertMany', payload)
-                    except Exception as e:
-                        print(f'ERROR convex upsert {ticker} {tf}: {e}', file=sys.stderr)
-                        break
-
-                    if isinstance(out, dict) and 'value' in out:
-                        v = out.get('value')
-                        print(f'  upserted: {v}')
-                    time.sleep(args.sleep)
+                try:
+                    n = upsert_candles(ticker=ticker, tf=tf, rows=batch)
+                    print(f'  pg upserted: {n}')
+                except Exception as e:
+                    print(f'ERROR pg upsert {ticker} {tf}: {e}', file=sys.stderr)
+                    break
+                time.sleep(args.sleep)
 
     return 0
 

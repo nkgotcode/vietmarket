@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Scan Timescale candles for obvious gaps and enqueue repairs in Timescale.
 
-This replaces the Convex-based repair queue.
+This is the current Timescale/Postgres repair queue scanner.
 
 Current behavior (v1):
 - For each (ticker, tf) in a recent window, scan consecutive candles ordered by ts.
