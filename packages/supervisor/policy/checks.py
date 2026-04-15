@@ -48,7 +48,7 @@ def check_event_blackout(row: dict[str, Any]) -> dict[str, Any]:
 
 def check_recommendation_status(row: dict[str, Any]) -> dict[str, Any]:
     status = row.get('recommendation_status') or 'draft'
-    blocked = status not in {'active', 'watch'}
+    blocked = status not in {'paper_eligible', 'candidate', 'watch'}
     return {
         'check_name': 'recommendation_status_gate',
         'passed': not blocked,

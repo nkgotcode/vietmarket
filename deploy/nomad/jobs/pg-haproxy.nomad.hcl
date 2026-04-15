@@ -51,14 +51,18 @@ frontend pg_rw
 
 backend patroni_rw
   mode tcp
-  option tcp-check
 
-  # Pure TCP checks on Postgres port.
-  # (Avoid depending on Patroni REST API reachability on 8008.)
+  # Route only to the Patroni leader.
+  # /leader returns HTTP 200 on the leader and 503 on replicas.
+  option httpchk
+  http-check connect port 8008
+  http-check send meth GET uri /leader ver HTTP/1.1 hdr Host localhost
+  http-check expect status 200
+
   default-server inter 2s fall 3 rise 2 on-marked-down shutdown-sessions
 
-  server optiplex 100.83.150.39:5432 check
-  server epyc     100.103.201.10:5432 check
+  server optiplex 100.83.150.39:5432 check port 8008
+  server epyc     100.103.201.10:5432 check port 8008
 CFG
       }
 

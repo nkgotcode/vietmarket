@@ -115,9 +115,16 @@ psql "postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=dis
 
 ### Important limitation
 
-This setup currently uses **TCP checks** to Postgres. That means HAProxy will route to any node with an open 5432, even if it is a replica.
+This setup currently uses **leader-aware HTTP health checks** against Patroni on port 8008.
+HAProxy should only route writes to a backend whose `/leader` endpoint returns HTTP 200.
 
-In practice, Patroni should keep only the leader accepting writes, but for strict leader-only routing you can upgrade the HAProxy check to a SQL check (e.g. verify `pg_is_in_recovery() = false`) or restore Patroni-REST-based checks when 8008 is reachable locally.
+If `:5433` still lands on a replica, verify all of:
+- the Patroni REST API is reachable from the HAProxy task placement node,
+- `/leader` returns 200 on the actual primary and 503 on replicas,
+- the generated `haproxy.cfg` in the allocation contains `http-check connect port 8008` and `http-check expect status 200`,
+- the `pg-haproxy` job has been re-run after the HCL change.
+
+If Patroni REST becomes unreachable again, a fallback is to use a SQL-level leader check (for example verifying `pg_is_in_recovery() = false`) rather than reverting to pure TCP checks.
 
 ## Runtime note
 

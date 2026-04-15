@@ -32,22 +32,22 @@ def run_paper_portfolio_cycle() -> dict:
             cur.execute('DELETE FROM portfolio_snapshots WHERE cycle_id = %s', (cycle_id,))
             cur.execute(
                 '''
-                SELECT p.cycle_id, p.ticker, p.recommendation_id, p.overall_result,
+                SELECT a.cycle_id, a.ticker, a.recommendation_id, a.admission_status,
                        r.side, r.confidence, r.suggested_priority,
                        t.price_last
-                FROM policy_results p
-                JOIN recommendations r ON r.recommendation_id = p.recommendation_id
-                LEFT JOIN ticker_snapshots t ON t.cycle_id = p.cycle_id AND t.ticker = p.ticker
-                WHERE p.cycle_id = %s
-                ORDER BY p.blocking_flag ASC, r.suggested_priority ASC, r.confidence DESC, p.ticker ASC
+                FROM paper_trade_admissions a
+                JOIN recommendations r ON r.recommendation_id = a.recommendation_id
+                LEFT JOIN ticker_snapshots t ON t.cycle_id = a.cycle_id AND t.ticker = a.ticker
+                WHERE a.cycle_id = %s
+                ORDER BY a.admission_status ASC, r.suggested_priority ASC, r.confidence DESC, a.ticker ASC
                 ''',
                 (cycle_id,),
             )
             rows = cur.fetchall()
             created = []
             cash_balance = 1_000_000_000.0
-            for idx, (cycle_id, ticker, recommendation_id, overall_result, side, confidence, suggested_priority, price_last) in enumerate(rows[:5], start=1):
-                if overall_result != 'approved' or not price_last:
+            for idx, (cycle_id, ticker, recommendation_id, admission_status, side, confidence, suggested_priority, price_last) in enumerate(rows[:5], start=1):
+                if admission_status != 'admitted' or not price_last:
                     continue
                 intent_id = f'intent_{new_snapshot_id()}'
                 qty = max(1.0, round((25_000_000.0 / float(price_last)), 2))
@@ -56,7 +56,7 @@ def run_paper_portfolio_cycle() -> dict:
                     INSERT INTO execution_intents (intent_id, cycle_id, recommendation_id, ticker, intent_status, side, target_qty, reference_price, notes_json, created_at)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ''',
-                    (intent_id, cycle_id, recommendation_id, ticker, 'approved', side, qty, price_last, json.dumps({'confidence': confidence, 'priority': suggested_priority}), utc_now()),
+                    (intent_id, cycle_id, recommendation_id, ticker, 'approved', side, qty, price_last, json.dumps({'confidence': confidence, 'priority': suggested_priority, 'admission_status': admission_status}), utc_now()),
                 )
                 paper_order_id = f'porder_{new_snapshot_id()}'
                 cur.execute(

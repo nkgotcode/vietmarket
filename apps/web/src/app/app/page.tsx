@@ -61,6 +61,9 @@ export default function AppHome() {
           <Link href="/app/delivery">Delivery</Link>
         </li>
         <li>
+          <Link href="/app/operator-control">Operator control</Link>
+        </li>
+        <li>
           <Link href="/app/execution">Execution</Link>
         </li>
         <li>

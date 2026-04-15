@@ -8,11 +8,23 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from packages.supervisor.common.db import connect
-from packages.supervisor.common.ids import new_decision_id, new_failure_id, new_recommendation_id, new_run_id
+from packages.supervisor.common.ids import new_decision_id, new_failure_id, new_promotion_decision_id, new_recommendation_id, new_run_id
 from packages.supervisor.common.time import utc_now
 from packages.supervisor.health.failure_writer import write_failure
 from packages.supervisor.health.worker_run_writer import write_worker_run
 from packages.supervisor.snapshots.common import to_jsonable
+
+
+def _status_rank(state: str) -> int:
+    order = {
+        'paper_eligible': 0,
+        'candidate': 1,
+        'watch': 2,
+        'research_only': 3,
+        'blocked': 4,
+        'retired': 5,
+    }
+    return order.get(state, 9)
 
 
 def generate_recommendations() -> dict:
@@ -25,34 +37,99 @@ def generate_recommendations() -> dict:
             cycle_id = cycle_row[0]
             cur.execute(
                 '''
-                SELECT t.thesis_id, t.ticker, t.side, t.horizon, t.confidence, t.why_now,
-                       t.supporting_evidence, t.contradicting_evidence, t.invalidation,
-                       t.suggested_priority, t.notes,
-                       c.total_score, c.total_confidence, c.ranking_bucket, c.blocking_flag
+                SELECT t.thesis_id,
+                       t.ticker,
+                       t.side,
+                       t.horizon,
+                       t.why_now,
+                       t.supporting_evidence,
+                       t.contradicting_evidence,
+                       t.invalidation,
+                       t.notes,
+                       d.score_version,
+                       d.alpha_score,
+                       d.quality_score,
+                       d.risk_score,
+                       d.execution_score,
+                       d.decision_score,
+                       d.model_confidence,
+                       d.evidence_confidence,
+                       d.execution_confidence,
+                       d.recommended_state,
+                       d.paper_eligible,
+                       d.block_reason_json,
+                       d.score_json
                 FROM theses t
-                JOIN candidate_rankings c ON c.cycle_id = t.cycle_id AND c.ticker = t.ticker
+                JOIN decision_scores d
+                  ON d.cycle_id = t.cycle_id AND d.ticker = t.ticker
                 WHERE t.cycle_id = %s
-                ORDER BY c.blocking_flag ASC, c.total_score DESC, c.total_confidence DESC, t.ticker ASC
+                  AND d.score_version = (SELECT score_version FROM score_versions ORDER BY created_at DESC LIMIT 1)
+                ORDER BY d.paper_eligible DESC, d.decision_score DESC, d.model_confidence DESC, t.ticker ASC
                 ''',
                 (cycle_id,),
             )
             rows = cur.fetchall()
             cur.execute('DELETE FROM supervisor_decisions WHERE cycle_id = %s AND decision_type = %s', (cycle_id, 'recommendation_generation'))
+            cur.execute('DELETE FROM promotion_decisions WHERE cycle_id = %s', (cycle_id,))
+            cur.execute('DELETE FROM recommendation_scorecards WHERE cycle_id = %s', (cycle_id,))
             cur.execute('DELETE FROM recommendations WHERE cycle_id = %s', (cycle_id,))
             now = utc_now()
             preview = []
             for row in rows:
-                thesis_id, ticker, side, horizon, confidence, why_now, supporting, contradicting, invalidation, priority, notes, total_score, total_confidence, ranking_bucket, blocking_flag = row
-                status = 'blocked' if blocking_flag else ('active' if ranking_bucket in ('high_conviction', 'actionable') else 'watch')
-                summary = f"{ticker} is {status} with Phase 3 score {float(total_score or 0.0):.2f} and confidence {float(total_confidence or 0.0):.2f}"
+                (
+                    thesis_id,
+                    ticker,
+                    side,
+                    horizon,
+                    why_now,
+                    supporting,
+                    contradicting,
+                    invalidation,
+                    notes,
+                    score_version,
+                    alpha_score,
+                    quality_score,
+                    risk_score,
+                    execution_score,
+                    decision_score,
+                    model_confidence,
+                    evidence_confidence,
+                    execution_confidence,
+                    recommended_state,
+                    paper_eligible,
+                    block_reason_json,
+                    score_json,
+                ) = row
+
+                status = recommended_state
+                confidence = float(model_confidence or 0.0)
+                suggested_priority = max(0, 100 - int(float(decision_score or 0.0)))
+                summary = (
+                    f"{ticker} is {status} with decision score {float(decision_score or 0.0):.2f}, "
+                    f"alpha {float(alpha_score or 0.0):.2f}, risk {float(risk_score or 0.0):.2f}, "
+                    f"execution {float(execution_score or 0.0):.2f}"
+                )
                 recommendation_json = {
                     'ticker': ticker,
                     'status': status,
-                    'ranking_bucket': ranking_bucket,
-                    'phase3_total_score': total_score,
-                    'phase3_total_confidence': total_confidence,
+                    'score_version': score_version,
+                    'paper_eligible': bool(paper_eligible),
+                    'alpha_score': alpha_score,
+                    'quality_score': quality_score,
+                    'risk_score': risk_score,
+                    'execution_score': execution_score,
+                    'decision_score': decision_score,
+                    'model_confidence': model_confidence,
+                    'evidence_confidence': evidence_confidence,
+                    'execution_confidence': execution_confidence,
+                    'block_reason_json': block_reason_json or {},
+                    'score_json': score_json or {},
                     'thesis_notes': notes,
                 }
+                why_now_text = (
+                    f"{why_now}; v2 state {status}, decision score {float(decision_score or 0.0):.2f}, "
+                    f"model confidence {float(model_confidence or 0.0):.2f}"
+                )
                 recommendation_id = new_recommendation_id()
                 cur.execute(
                     '''
@@ -71,13 +148,69 @@ def generate_recommendations() -> dict:
                         side,
                         horizon,
                         confidence,
-                        priority,
+                        suggested_priority,
                         summary,
-                        why_now,
+                        why_now_text,
                         json.dumps(to_jsonable(supporting), default=str),
                         json.dumps(to_jsonable(contradicting), default=str),
                         json.dumps(to_jsonable(invalidation), default=str),
                         json.dumps(to_jsonable(recommendation_json), default=str),
+                        now,
+                    ),
+                )
+                cur.execute(
+                    '''
+                    INSERT INTO recommendation_scorecards (
+                      recommendation_id, cycle_id, ticker, score_version, alpha_score, quality_score,
+                      risk_score, execution_score, decision_score, model_confidence,
+                      evidence_confidence, execution_confidence, scorecard_json, created_at
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ''',
+                    (
+                        recommendation_id,
+                        cycle_id,
+                        ticker,
+                        score_version,
+                        alpha_score,
+                        quality_score,
+                        risk_score,
+                        execution_score,
+                        decision_score,
+                        model_confidence,
+                        evidence_confidence,
+                        execution_confidence,
+                        json.dumps(to_jsonable(recommendation_json), default=str),
+                        now,
+                    ),
+                )
+                cur.execute(
+                    '''
+                    INSERT INTO promotion_decisions (
+                      promotion_decision_id, recommendation_id, cycle_id, ticker, score_version,
+                      promotion_state, paper_eligible, decision_json, created_at
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ''',
+                    (
+                        new_promotion_decision_id(),
+                        recommendation_id,
+                        cycle_id,
+                        ticker,
+                        score_version,
+                        recommended_state,
+                        bool(paper_eligible),
+                        json.dumps(
+                            to_jsonable(
+                                {
+                                    'decision_score': decision_score,
+                                    'model_confidence': model_confidence,
+                                    'evidence_confidence': evidence_confidence,
+                                    'execution_confidence': execution_confidence,
+                                    'block_reason_json': block_reason_json or {},
+                                    'score_json': score_json or {},
+                                }
+                            ),
+                            default=str,
+                        ),
                         now,
                     ),
                 )
@@ -93,14 +226,15 @@ def generate_recommendations() -> dict:
                         cycle_id,
                         ticker,
                         'recommendation_generation',
-                        json.dumps({'thesis_id': thesis_id, 'ranking_bucket': ranking_bucket, 'blocking_flag': blocking_flag}, default=str),
+                        json.dumps({'thesis_id': thesis_id, 'score_version': score_version, 'recommended_state': recommended_state, 'paper_eligible': paper_eligible}, default=str),
                         json.dumps(to_jsonable(recommendation_json), default=str),
                         json.dumps(to_jsonable(recommendation_json), default=str),
                         'complete',
                         now,
                     ),
                 )
-                preview.append({'ticker': ticker, 'status': status, 'side': side, 'confidence': confidence})
+                preview.append({'ticker': ticker, 'status': status, 'confidence': confidence, 'decision_score': decision_score, 'paper_eligible': bool(paper_eligible)})
+        preview.sort(key=lambda item: (_status_rank(str(item['status'])), -float(item['decision_score'] or 0.0), item['ticker']))
         return {'ok': True, 'cycle_id': cycle_id, 'recommendation_count': len(rows), 'preview': preview[:10]}
 
 

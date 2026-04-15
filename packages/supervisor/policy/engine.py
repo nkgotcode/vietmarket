@@ -49,21 +49,30 @@ def _latest_rows(conn) -> list[dict[str, Any]]:
             SELECT r.recommendation_id,
                    r.cycle_id,
                    r.ticker,
-                   r.status AS recommendation_status,
+                   coalesce(p.promotion_state, r.status) AS recommendation_status,
                    r.side,
-                   r.confidence,
+                   coalesce((r.recommendation_json->>'model_confidence')::double precision, r.confidence, 0) AS confidence,
                    r.suggested_priority,
                    c.overall_status AS cycle_overall_status,
                    t.liquidity_bucket,
                    t.corporate_action_flag AS has_corporate_action,
-                   COALESCE((cr.ranking_reason_json->'family_breakdown'->'liquidity'->>'score_normalized')::double precision, 0) AS liquidity_score,
-                   t.sector
+                   coalesce(d.execution_score / 100.0, 0) AS liquidity_score,
+                   t.sector,
+                   coalesce(d.paper_eligible, false) AS paper_eligible,
+                   d.decision_score,
+                   d.score_version
             FROM recommendations r
             JOIN market_state_cycles c ON c.cycle_id = r.cycle_id
+            LEFT JOIN recommendation_scorecards s
+              ON s.recommendation_id = r.recommendation_id
+            LEFT JOIN promotion_decisions p
+              ON p.recommendation_id = r.recommendation_id
             LEFT JOIN ticker_snapshots t ON t.cycle_id = r.cycle_id AND t.ticker = r.ticker
-            LEFT JOIN candidate_rankings cr ON cr.cycle_id = r.cycle_id AND cr.ticker = r.ticker
+            LEFT JOIN decision_scores d
+              ON d.cycle_id = r.cycle_id AND d.ticker = r.ticker
+             AND d.score_version = (SELECT score_version FROM score_versions ORDER BY created_at DESC LIMIT 1)
             WHERE r.cycle_id = (SELECT cycle_id FROM market_state_cycles ORDER BY created_at DESC LIMIT 1)
-            ORDER BY r.status ASC, r.suggested_priority ASC, r.confidence DESC, r.ticker ASC
+            ORDER BY coalesce(d.paper_eligible, false) DESC, coalesce(d.decision_score, 0) DESC, r.ticker ASC
             '''
         )
         return [dict(row) for row in cur.fetchall()]
@@ -89,7 +98,7 @@ def evaluate_policy() -> dict[str, Any]:
                     check_event_blackout(row),
                 ]
                 blocking = any(item['blocking'] and not item['passed'] for item in checks)
-                overall = 'blocked' if blocking else 'approved'
+                overall = 'blocked' if blocking else ('approved' if bool(row.get('paper_eligible')) else 'monitor')
                 if overall == 'approved':
                     active_count += 1
                 cur.execute(
@@ -106,7 +115,7 @@ def evaluate_policy() -> dict[str, Any]:
                         overall,
                         blocking,
                         json.dumps(to_jsonable(checks), default=str),
-                        json.dumps({'sector': row.get('sector'), 'liquidity_bucket': row.get('liquidity_bucket')}, default=str),
+                        json.dumps({'sector': row.get('sector'), 'liquidity_bucket': row.get('liquidity_bucket'), 'score_version': row.get('score_version'), 'decision_score': row.get('decision_score')}, default=str),
                         utc_now(),
                     ),
                 )

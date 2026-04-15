@@ -16,9 +16,13 @@ from packages.supervisor.health.failure_writer import write_failure
 from packages.supervisor.health.worker_run_writer import write_worker_run
 
 SCRIPTS = (
+    ('build_forward_labels', 'packages/supervisor/evaluation/build_forward_labels.py'),
     ('evaluate_recommendations', 'packages/supervisor/reports/evaluate_recommendations.py'),
     ('run_replay', 'packages/supervisor/reports/run_replay.py'),
+    ('analyze_score_deciles', 'packages/supervisor/evaluation/analyze_score_deciles.py'),
+    ('analyze_regime_stability', 'packages/supervisor/evaluation/analyze_regime_stability.py'),
     ('calibration', 'packages/supervisor/reports/calibration.py'),
+    ('build_scores_v2', 'packages/supervisor/scoring/build_scores_v2.py'),
 )
 
 

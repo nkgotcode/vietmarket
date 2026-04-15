@@ -34,16 +34,24 @@ def generate_intraday_brief() -> dict:
             cycle_id, market_regime, confidence, frontier_status, overall_status, freshness_status = row
             cur.execute(
                 '''
-                SELECT ticker, total_score, total_confidence, ranking_bucket
-                FROM candidate_rankings
-                WHERE cycle_id = %s AND blocking_flag = false
-                ORDER BY total_score DESC, total_confidence DESC, ticker ASC
+                SELECT ticker, decision_score, model_confidence, recommended_state, paper_eligible
+                FROM decision_scores
+                WHERE cycle_id = %s
+                  AND score_version = (SELECT score_version FROM score_versions ORDER BY created_at DESC LIMIT 1)
+                  AND recommended_state <> 'blocked'
+                ORDER BY paper_eligible DESC, decision_score DESC, model_confidence DESC, ticker ASC
                 LIMIT 5
                 ''',
                 (cycle_id,),
             )
             candidate_rows = [
-                {'ticker': r[0], 'total_score': r[1], 'total_confidence': r[2], 'ranking_bucket': r[3]}
+                {
+                    'ticker': r[0],
+                    'decision_score': r[1],
+                    'model_confidence': r[2],
+                    'recommended_state': r[3],
+                    'paper_eligible': r[4],
+                }
                 for r in cur.fetchall()
             ]
             title = f'Intraday brief — {market_regime}'

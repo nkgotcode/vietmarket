@@ -15,6 +15,18 @@ from packages.supervisor.health.worker_run_writer import write_worker_run
 from packages.supervisor.snapshots.common import to_jsonable
 
 
+def _status_rank(state: str) -> int:
+    order = {
+        'paper_eligible': 0,
+        'candidate': 1,
+        'watch': 2,
+        'research_only': 3,
+        'blocked': 4,
+        'retired': 5,
+    }
+    return order.get(state, 9)
+
+
 def generate_daily_brief() -> dict:
     with connect() as conn:
         with conn.cursor() as cur:
@@ -34,29 +46,45 @@ def generate_daily_brief() -> dict:
             cycle_id, market_regime, confidence, breadth_state, trend_state, liquidity_state, event_pressure_state = regime
             cur.execute(
                 '''
-                SELECT ticker, status, side, confidence, suggested_priority, summary
-                FROM recommendations
-                WHERE cycle_id = %s
-                ORDER BY status ASC, suggested_priority ASC, confidence DESC, ticker ASC
-                LIMIT 10
+                SELECT r.ticker, r.status, r.side, r.confidence, r.suggested_priority, r.summary,
+                       s.score_version, s.alpha_score, s.quality_score, s.risk_score,
+                       s.execution_score, s.decision_score, s.model_confidence,
+                       p.promotion_state, p.paper_eligible
+                FROM recommendations r
+                LEFT JOIN recommendation_scorecards s ON s.recommendation_id = r.recommendation_id
+                LEFT JOIN promotion_decisions p ON p.recommendation_id = r.recommendation_id
+                WHERE r.cycle_id = %s
+                ORDER BY r.suggested_priority ASC, r.confidence DESC, r.ticker ASC
                 ''',
                 (cycle_id,),
             )
-            rec_rows = [
-                {
-                    'ticker': row[0],
-                    'status': row[1],
-                    'side': row[2],
-                    'confidence': row[3],
-                    'suggested_priority': row[4],
-                    'summary': row[5],
-                }
-                for row in cur.fetchall()
-            ]
+            rec_rows = []
+            for ticker, status, side, reco_confidence, suggested_priority, summary, score_version, alpha_score, quality_score, risk_score, execution_score, decision_score, model_confidence, promotion_state, paper_eligible in cur.fetchall():
+                rec_rows.append(
+                    {
+                        'ticker': ticker,
+                        'status': promotion_state or status,
+                        'side': side,
+                        'confidence': reco_confidence,
+                        'suggested_priority': suggested_priority,
+                        'summary': summary,
+                        'score_version': score_version,
+                        'paper_eligible': paper_eligible,
+                        'decision_score': decision_score,
+                        'alpha_score': alpha_score,
+                        'quality_score': quality_score,
+                        'risk_score': risk_score,
+                        'execution_score': execution_score,
+                        'model_confidence': model_confidence,
+                    }
+                )
+            rec_rows.sort(key=lambda row: (_status_rank(str(row['status'])), int(row['suggested_priority'] or 999), -float(row['decision_score'] or 0.0), row['ticker']))
+            top_rows = rec_rows[:10]
             title = f'Daily brief — {market_regime}'
             summary_text = (
                 f"Regime {market_regime} (confidence {float(confidence or 0.0):.2f}); "
-                f"breadth {breadth_state}, trend {trend_state}, liquidity {liquidity_state}, event pressure {event_pressure_state}."
+                f"breadth {breadth_state}, trend {trend_state}, liquidity {liquidity_state}, event pressure {event_pressure_state}. "
+                f"Top state mix: {', '.join(sorted({str(row['status']) for row in top_rows})) if top_rows else 'none'}."
             )
             brief_json = {
                 'market_regime': market_regime,
@@ -65,7 +93,7 @@ def generate_daily_brief() -> dict:
                 'trend_state': trend_state,
                 'liquidity_state': liquidity_state,
                 'event_pressure_state': event_pressure_state,
-                'top_recommendations': rec_rows,
+                'top_recommendations': top_rows,
             }
             now = utc_now()
             cur.execute('DELETE FROM daily_briefs WHERE cycle_id = %s AND brief_type = %s', (cycle_id, 'daily'))
@@ -85,7 +113,7 @@ def generate_daily_brief() -> dict:
                     now,
                 ),
             )
-        return {'ok': True, 'cycle_id': cycle_id, 'brief_type': 'daily', 'recommendation_count': len(rec_rows), 'title': title}
+        return {'ok': True, 'cycle_id': cycle_id, 'brief_type': 'daily', 'recommendation_count': len(top_rows), 'title': title}
 
 
 if __name__ == '__main__':

@@ -43,6 +43,13 @@ def new_outcome_id() -> str:
     return f'outcome_{uuid.uuid4().hex}'
 
 
+def new_promotion_decision_id() -> str:
+    return f'promote_{uuid.uuid4().hex}'
+
+
+def new_admission_id() -> str:
+    return f'admit_{uuid.uuid4().hex}'
+
 
 def new_supervisor_run_id() -> str:
     return f'srun_{uuid.uuid4().hex}'
