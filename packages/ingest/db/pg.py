@@ -23,6 +23,11 @@ def upsert_candles(*, ticker: str, tf: str, rows: Sequence[dict]) -> int:
 
     rows: [{ts,o,h,l,c,v,source}]
     ts is unix ms.
+
+    Notes:
+    - Uses conditional ON CONFLICT update so unchanged rows are not rewritten.
+    - `ingested_at` is updated only when candle payload values/source actually change.
+      This avoids false "reingest-old" churn signals in monitoring.
     """
 
     if not rows:
@@ -54,7 +59,14 @@ def upsert_candles(*, ticker: str, tf: str, rows: Sequence[dict]) -> int:
       c = EXCLUDED.c,
       v = EXCLUDED.v,
       source = COALESCE(EXCLUDED.source, candles.source),
-      ingested_at = now();
+      ingested_at = now()
+    WHERE
+      candles.o IS DISTINCT FROM EXCLUDED.o
+      OR candles.h IS DISTINCT FROM EXCLUDED.h
+      OR candles.l IS DISTINCT FROM EXCLUDED.l
+      OR candles.c IS DISTINCT FROM EXCLUDED.c
+      OR candles.v IS DISTINCT FROM EXCLUDED.v
+      OR candles.source IS DISTINCT FROM COALESCE(EXCLUDED.source, candles.source);
     """.strip()
 
     with pg_connect() as conn:

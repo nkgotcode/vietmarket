@@ -14,6 +14,12 @@ job "pg-haproxy" {
       value     = "^(optiplex|epyc)$"
     }
 
+    # Ensure one proxy allocation per host so both stable DB endpoints are reachable.
+    constraint {
+      operator = "distinct_hosts"
+      value    = "true"
+    }
+
     spread {
       attribute = "${node.unique.name}"
     }

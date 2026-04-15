@@ -1,0 +1,1 @@
+{"ok":false,"error":"invalid_window_days","message":"windowDays must be between 1 and 90"}

@@ -1,0 +1,67 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vietmarket-history-api-v1
+  labels:
+    app: vietmarket-history-api
+spec:
+  groups:
+    - name: vietmarket.historyapi.v1
+      interval: 30s
+      rules:
+        - alert: HistoryApiV1High5xxRate
+          expr: |
+            (
+              sum(rate(http_requests_total{job="vietmarket-history-api",route=~"/v1/.*",status=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(http_requests_total{job="vietmarket-history-api",route=~"/v1/.*"}[5m])), 0.001)
+            ) > 0.02
+          for: 10m
+          labels:
+            severity: page
+          annotations:
+            summary: "History API v1 5xx rate >2%"
+            description: "5xx ratio over v1 endpoints exceeded 2% for 10m."
+
+        - alert: HistoryApiV1P95LatencyHigh
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (rate(http_request_duration_seconds_bucket{job="vietmarket-history-api",route=~"/v1/.*"}[10m]))
+            ) > 0.75
+          for: 15m
+          labels:
+            severity: ticket
+          annotations:
+            summary: "History API v1 p95 latency high"
+            description: "p95 latency over v1 endpoints is above 750ms for 15m."
+
+        - alert: HistoryApiFreshnessDegraded
+          expr: |
+            max by (job) (vietmarket_frontier_lag_ms{job="vietmarket-derived-sync"}) > 14400000
+          for: 30m
+          labels:
+            severity: page
+          annotations:
+            summary: "Market freshness degraded"
+            description: "Frontier lag exceeds 4h for 30m."
+
+        - alert: HistoryApiCoverageDrop
+          expr: |
+            min_over_time(vietmarket_candles_coverage_pct{job="vietmarket-derived-sync"}[30m]) < 95
+          for: 30m
+          labels:
+            severity: ticket
+          annotations:
+            summary: "Candles coverage dropped below 95%"
+            description: "Coverage to eligible symbols dropped below SLO guardrail."
+
+        - alert: HistoryApiRepairQueueBacklog
+          expr: |
+            max_over_time(vietmarket_repair_queue_queued{job="vietmarket-derived-sync"}[15m]) > 500
+          for: 15m
+          labels:
+            severity: ticket
+          annotations:
+            summary: "Repair queue backlog >500"
+            description: "Queued repair tasks are growing and may need operator action."

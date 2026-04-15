@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-02-19T01:11:03.100572+00:00",
+  "results": [
+    {
+      "symbol": "EMC",
+      "provider": "VCI/vnstock",
+      "ok": true,
+      "rows": 561,
+      "status": "present",
+      "error": null
+    },
+    {
+      "symbol": "TS4",
+      "provider": "VCI/vnstock",
+      "ok": true,
+      "rows": 561,
+      "status": "present",
+      "error": null
+    },
+    {
+      "symbol": "X77",
+      "provider": "VCI/vnstock",
+      "ok": true,
+      "rows": 561,
+      "status": "present",
+      "error": null
+    }
+  ],
+  "all_hard_missing": false
+}

@@ -71,10 +71,22 @@ def parse_ddmmyyyy(s: str) -> Optional[date]:
     if not s:
         return None
     try:
-        # Vietstock uses dd/mm/yyyy
+        # Vietstock primarily uses dd/mm/yyyy
         return datetime.strptime(s, "%d/%m/%Y").date()
     except Exception:
         return None
+
+
+def parse_any_date(s: str) -> Optional[date]:
+    s = (s or "").strip()
+    if not s:
+        return None
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except Exception:
+            continue
+    return None
 
 
 def md5_id(*parts: str) -> str:
@@ -375,9 +387,9 @@ def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> Lis
         headline = pick(it, ['Note', 'Title', 'Content', 'Description'])
         event_type = pick(it, ['Name', 'EventType', 'TypeName'])
 
-        ex_parsed = parse_ddmmyyyy(ex_date) if ex_date else None
-        record_parsed = parse_ddmmyyyy(record_date) if record_date else None
-        pay_parsed = parse_ddmmyyyy(pay_date) if pay_date else None
+        ex_parsed = parse_any_date(ex_date) if ex_date else None
+        record_parsed = parse_any_date(record_date) if record_date else None
+        pay_parsed = parse_any_date(pay_date) if pay_date else None
 
         if not (ex_parsed and record_parsed and pay_parsed):
             hx, hr, hp = _extract_dates_from_text(headline)
@@ -407,21 +419,21 @@ def parse_events_from_json(obj, source_url: str, universe_re: re.Pattern) -> Lis
 
 def _extract_dates_from_text(text: str):
     """Best-effort extraction of (ex_date, record_date, pay_date) from free-form text."""
-    date_pat = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
+    date_pat = re.compile(r"\b(?:\d{2}[/-]\d{2}[/-]\d{4}|\d{4}[/-]\d{2}[/-]\d{2})\b")
     dates = date_pat.findall(text or "")
 
     def _label_date(pat: str):
         m = re.search(pat, text, re.I)
         if not m:
             return None
-        return parse_ddmmyyyy(m.group(1))
+        return parse_any_date(m.group(1))
 
-    ex_date = _label_date(r"(?:GDKHQ|Ex\s*-?date|Ngày\s*GDKHQ)\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})")
-    record_date = _label_date(r"(?:NDKCC|Record\s*-?date|Ngày\s*đăng\s*ký\s*cuối\s*cùng)\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})")
-    pay_date = _label_date(r"(?:Thanh\s*toán|Pay\s*-?date|Ngày\s*thanh\s*toán|Time)\s*[:\-]?\s*(\d{2}/\d{2}/\d{4})")
+    ex_date = _label_date(r"(?:GDKHQ|Ex\s*-?date|Ex\s*-?right\s*date|Ngày\s*GDKHQ|Không\s*hưởng\s*quyền)\s*[:\-]?\s*(\d{2}[/-]\d{2}[/-]\d{4}|\d{4}[/-]\d{2}[/-]\d{2})")
+    record_date = _label_date(r"(?:NDKCC|Record\s*-?date|Ngày\s*đăng\s*ký\s*cuối\s*cùng)\s*[:\-]?\s*(\d{2}[/-]\d{2}[/-]\d{4}|\d{4}[/-]\d{2}[/-]\d{2})")
+    pay_date = _label_date(r"(?:Thanh\s*toán|Pay\s*-?date|Ngày\s*thanh\s*toán|Time|Ngày\s*chi\s*trả)\s*[:\-]?\s*(\d{2}[/-]\d{2}[/-]\d{4}|\d{4}[/-]\d{2}[/-]\d{2})")
 
     # Fallback by order if labels are absent.
-    parsed = [parse_ddmmyyyy(d) for d in dates]
+    parsed = [d for d in (parse_any_date(x) for x in dates) if d is not None]
     if ex_date is None and len(parsed) > 0:
         ex_date = parsed[0]
     if record_date is None and len(parsed) > 1:

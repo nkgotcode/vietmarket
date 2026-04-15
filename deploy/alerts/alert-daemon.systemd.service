@@ -1,0 +1,16 @@
+[Unit]
+Description=VietMarket Alert Daemon (LISTEN/NOTIFY)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/Users/lenamkhanh/vietmarket
+Environment=PG_URL=postgres://vietmarket:vietmarket@100.83.150.39:5433/vietmarket?sslmode=disable
+ExecStart=/Users/lenamkhanh/vietmarket/.venv/bin/python /Users/lenamkhanh/vietmarket/tools/alerts/run_alert_daemon.py --pg-url ${PG_URL} --rules /Users/lenamkhanh/vietmarket/config/alerts/rules.v1.yaml --watchlists /Users/lenamkhanh/vietmarket/config/alerts/watchlists.json --portfolio /Users/lenamkhanh/vietmarket/config/alerts/portfolio_symbols_current.json --channels /Users/lenamkhanh/vietmarket/config/alerts/channels.json --state /Users/lenamkhanh/vietmarket/runtime/alerts/state.json --firelog /Users/lenamkhanh/vietmarket/runtime/alerts/fires.jsonl
+Restart=always
+RestartSec=3
+StandardOutput=append:/Users/lenamkhanh/vietmarket/runtime/alerts/daemon.log
+StandardError=append:/Users/lenamkhanh/vietmarket/runtime/alerts/daemon.log
+
+[Install]
+WantedBy=multi-user.target

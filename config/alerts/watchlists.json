@@ -1,0 +1,10 @@
+{
+  "core-trading": {
+    "name": "Core Trading",
+    "symbols": ["VCB", "BVH", "VPB", "ACB", "VCK", "MSR"]
+  },
+  "banks": {
+    "name": "Banks",
+    "symbols": ["VCB", "VPB", "ACB", "TCB", "MBB"]
+  }
+}

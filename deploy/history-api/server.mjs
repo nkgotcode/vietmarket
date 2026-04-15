@@ -445,6 +445,292 @@ LIMIT $${params.length}
   }
 });
 
+function badRequest(res, code, message) {
+  return res.status(400).json({ ok: false, error: code, message });
+}
+
+function parseWindowDays(raw, defaultDays = 7) {
+  const n = raw == null ? defaultDays : Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || n > 90) return null;
+  return Math.floor(n);
+}
+
+function parseLimit(raw, def, min, max) {
+  const n = raw == null ? def : Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(Math.max(Math.floor(n), min), max);
+}
+
+// Versioned API (production contracts)
+app.get('/v1/analytics/overview', async (req, res) => {
+  if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  try {
+    const sql = `
+WITH c AS (
+  SELECT count(*)::bigint rows, count(distinct ticker)::int tickers, max(ts)::bigint max_ts, max(ingested_at) max_ingested_at
+  FROM candles
+), cov AS (
+  SELECT
+    max(case when metric='candles_eligible_total' then value_numeric end)::int eligible_total,
+    max(case when metric='candles_eligible_with_candles' then value_numeric end)::int eligible_with,
+    max(case when metric='candles_eligible_missing' then value_numeric end)::int eligible_missing,
+    max(case when metric='candles_coverage_pct' then value_numeric end) coverage_pct
+  FROM market_stats
+), tf AS (
+  SELECT
+    count(*) FILTER (WHERE tf='1d')::bigint rows_1d,
+    count(*) FILTER (WHERE tf='1h')::bigint rows_1h,
+    count(*) FILTER (WHERE tf='15m')::bigint rows_15m,
+    count(distinct ticker) FILTER (WHERE tf='1d')::int tickers_1d,
+    count(distinct ticker) FILTER (WHERE tf='1h')::int tickers_1h,
+    count(distinct ticker) FILTER (WHERE tf='15m')::int tickers_15m
+  FROM candles
+), ca AS (
+  SELECT count(*)::int rows,
+         count(*) FILTER (WHERE ex_date IS NOT NULL)::int ex_nonnull,
+         count(*) FILTER (WHERE record_date IS NOT NULL)::int record_nonnull,
+         count(*) FILTER (WHERE pay_date IS NOT NULL)::int pay_nonnull,
+         max(ingested_at) as max_ingested_at
+  FROM corporate_actions
+), f AS (
+  SELECT
+    (select count(*)::bigint from financials) financials_rows,
+    (select count(*)::bigint from fundamentals) fundamentals_rows,
+    (select count(*)::bigint from technical_indicators) technical_rows,
+    (select count(*)::bigint from indicators) indicators_rows,
+    (select count(*)::bigint from market_stats) market_stats_rows
+)
+SELECT row_to_json(x) as j
+FROM (
+  SELECT
+    now() as generated_at,
+    c.rows as candles_rows,
+    c.tickers as candles_tickers,
+    c.max_ts as candles_max_ts,
+    c.max_ingested_at as candles_max_ingested_at,
+    tf.rows_1d, tf.rows_1h, tf.rows_15m,
+    tf.tickers_1d, tf.tickers_1h, tf.tickers_15m,
+    cov.eligible_total, cov.eligible_with, cov.eligible_missing, cov.coverage_pct,
+    ca.rows as ca_rows, ca.ex_nonnull, ca.record_nonnull, ca.pay_nonnull, ca.max_ingested_at as ca_max_ingested_at,
+    f.financials_rows, f.fundamentals_rows, f.technical_rows, f.indicators_rows, f.market_stats_rows,
+    (SELECT value_text FROM market_stats WHERE metric='candles_frontier_status') as frontier_status,
+    (SELECT value_numeric FROM market_stats WHERE metric='candles_frontier_lag_ms') as frontier_lag_ms
+  FROM c, cov, tf, ca, f
+) x
+    `.trim();
+
+    const r = await pool.query(sql);
+    const j = r.rows?.[0]?.j || {};
+    res.json({ ok: true, version: 'v1', data: j });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: 'internal_error', message: String(e?.message || e) });
+  }
+});
+
+app.get('/v1/sentiment/overview', async (req, res) => {
+  if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const windowDays = parseWindowDays(req.query.windowDays, 7);
+  const limit = parseLimit(req.query.limit, 30, 1, 200);
+  if (windowDays == null) return badRequest(res, 'invalid_window_days', 'windowDays must be between 1 and 90');
+  if (limit == null) return badRequest(res, 'invalid_limit', 'limit must be numeric');
+
+  try {
+    const sql = `
+WITH recent AS (
+  SELECT a.url, a.published_at, lower(coalesce(a.title,'') || ' ' || coalesce(a.text,'')) txt
+  FROM articles a
+  WHERE a.fetch_status='fetched'
+    AND a.published_at >= now() - ($1::text || ' days')::interval
+), scored AS (
+  SELECT
+    url,
+    published_at,
+    (
+      (CASE WHEN txt ~ '(\\mbeat\\M|\\mgrowth\\M|\\mstrong\\M|\\mrally\\M|\\mprofit\\M|\\mupgrade\\M|\\mtích cực\\M|\\mtăng trưởng\\M|\\mlãi\\M|\\mkhả quan\\M)' THEN 1 ELSE 0 END)
+      -
+      (CASE WHEN txt ~ '(\\mmiss\\M|\\mweak\\M|\\mdrop\\M|\\mloss\\M|\\mdowngrade\\M|\\mrisk\\M|\\mtiêu cực\\M|\\mgiảm\\M|\\mlỗ\\M|\\mrủi ro\\M)' THEN 1 ELSE 0 END)
+    )::int as score
+  FROM recent
+), ticker_scores AS (
+  SELECT s.ticker,
+         avg(sc.score)::double precision avg_score,
+         count(*)::int articles,
+         max(sc.published_at) last_article_at
+  FROM scored sc
+  JOIN article_symbols s ON s.article_url=sc.url
+  GROUP BY s.ticker
+), overall AS (
+  SELECT avg(score)::double precision avg_score,
+         count(*)::int articles,
+         max(published_at) last_article_at
+  FROM scored
+)
+SELECT json_build_object(
+  'generated_at', now(),
+  'window_days', $1::int,
+  'overall', (SELECT row_to_json(o) FROM overall o),
+  'top_positive', COALESCE((SELECT json_agg(row_to_json(t)) FROM (SELECT * FROM ticker_scores ORDER BY avg_score DESC NULLS LAST, articles DESC LIMIT $2) t), '[]'::json),
+  'top_negative', COALESCE((SELECT json_agg(row_to_json(t)) FROM (SELECT * FROM ticker_scores ORDER BY avg_score ASC NULLS LAST, articles DESC LIMIT $2) t), '[]'::json)
+) AS j
+    `.trim();
+
+    const r = await pool.query(sql, [windowDays, limit]);
+    res.json({ ok: true, version: 'v1', data: r.rows?.[0]?.j || null });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: 'internal_error', message: String(e?.message || e) });
+  }
+});
+
+app.get('/v1/sentiment/:ticker', async (req, res) => {
+  if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const ticker = String(req.params.ticker || '').trim().toUpperCase();
+  const windowDays = parseWindowDays(req.query.windowDays, 30);
+  if (!/^[A-Z0-9]{1,10}$/.test(ticker)) return badRequest(res, 'invalid_ticker', 'ticker is required');
+  if (windowDays == null) return badRequest(res, 'invalid_window_days', 'windowDays must be between 1 and 90');
+
+  try {
+    const sql = `
+WITH recent AS (
+  SELECT a.url, a.published_at, a.title, left(coalesce(a.text,''),220) snippet,
+         lower(coalesce(a.title,'') || ' ' || coalesce(a.text,'')) txt
+  FROM article_symbols s
+  JOIN articles a ON a.url=s.article_url
+  WHERE s.ticker=$1
+    AND a.fetch_status='fetched'
+    AND a.published_at >= now() - ($2::text || ' days')::interval
+), scored AS (
+  SELECT *,
+    (
+      (CASE WHEN txt ~ '(\\mbeat\\M|\\mgrowth\\M|\\mstrong\\M|\\mrally\\M|\\mprofit\\M|\\mupgrade\\M|\\mtích cực\\M|\\mtăng trưởng\\M|\\mlãi\\M|\\mkhả quan\\M)' THEN 1 ELSE 0 END)
+      -
+      (CASE WHEN txt ~ '(\\mmiss\\M|\\mweak\\M|\\mdrop\\M|\\mloss\\M|\\mdowngrade\\M|\\mrisk\\M|\\mtiêu cực\\M|\\mgiảm\\M|\\mlỗ\\M|\\mrủi ro\\M)' THEN 1 ELSE 0 END)
+    )::int as score
+  FROM recent
+)
+SELECT json_build_object(
+  'generated_at', now(),
+  'ticker', $1,
+  'window_days', $2::int,
+  'summary', json_build_object(
+    'avg_score', avg(score)::double precision,
+    'articles', count(*)::int,
+    'last_article_at', max(published_at)
+  ),
+  'recent_articles', COALESCE(json_agg(json_build_object('url',url,'title',title,'published_at',published_at,'score',score,'snippet',snippet) ORDER BY published_at DESC) FILTER (WHERE url IS NOT NULL), '[]'::json)
+) AS j
+FROM scored
+    `.trim();
+
+    const r = await pool.query(sql, [ticker, windowDays]);
+    res.json({ ok: true, version: 'v1', data: r.rows?.[0]?.j || null });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: 'internal_error', message: String(e?.message || e) });
+  }
+});
+
+app.get('/v1/context/:ticker', async (req, res) => {
+  if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const ticker = String(req.params.ticker || '').trim().toUpperCase();
+  if (!/^[A-Z0-9]{1,10}$/.test(ticker)) return badRequest(res, 'invalid_ticker', 'ticker is required');
+
+  try {
+    const sql = `
+WITH c AS (
+  SELECT tf, ts, o,h,l,c,v,source, ingested_at
+  FROM candles_latest
+  WHERE ticker=$1 AND tf IN ('1d','1h','15m')
+), t AS (
+  SELECT ticker, tf, asof_ts, close, sma20, sma50, ema20, updated_at
+  FROM technical_indicators
+  WHERE ticker=$1
+), f AS (
+  SELECT metric, value, period, period_date, updated_at
+  FROM fundamentals
+  WHERE ticker=$1
+), ca AS (
+  SELECT id, ex_date, record_date, pay_date, headline, event_type, source, source_url, ingested_at
+  FROM corporate_actions
+  WHERE ticker=$1
+  ORDER BY ex_date DESC NULLS LAST, id DESC
+  LIMIT 20
+), n AS (
+  SELECT a.url, a.title, a.source, a.published_at, left(coalesce(a.text,''),220) snippet
+  FROM article_symbols s
+  JOIN articles a ON a.url=s.article_url
+  WHERE s.ticker=$1 AND a.fetch_status='fetched'
+  ORDER BY a.published_at DESC NULLS LAST, a.url DESC
+  LIMIT 20
+)
+SELECT json_build_object(
+  'generated_at', now(),
+  'ticker', $1,
+  'candles_latest', COALESCE((SELECT json_object_agg(tf, row_to_json(cx)) FROM (SELECT * FROM c) cx), '{}'::json),
+  'technicals', COALESCE((SELECT json_object_agg(tf, row_to_json(tx)) FROM (SELECT * FROM t) tx), '{}'::json),
+  'fundamentals', COALESCE((SELECT json_agg(row_to_json(fx)) FROM (SELECT * FROM f) fx), '[]'::json),
+  'corporate_actions', COALESCE((SELECT json_agg(row_to_json(cax)) FROM (SELECT * FROM ca) cax), '[]'::json),
+  'news', COALESCE((SELECT json_agg(row_to_json(nx)) FROM (SELECT * FROM n) nx), '[]'::json)
+) AS j
+    `.trim();
+
+    const r = await pool.query(sql, [ticker]);
+    res.json({ ok: true, version: 'v1', data: r.rows?.[0]?.j || null });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: 'internal_error', message: String(e?.message || e) });
+  }
+});
+
+app.get('/v1/overall/health', async (req, res) => {
+  if (!authOk(req)) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  try {
+    const sql = `
+WITH c AS (
+  SELECT count(*)::bigint rows, max(ts)::bigint max_ts, max(ingested_at) max_ingested_at FROM candles
+), s AS (
+  SELECT count(*)::int rows, max(updated_at) max_updated_at FROM symbols
+), rq AS (
+  SELECT
+    count(*) FILTER (WHERE status='queued')::int queued,
+    count(*) FILTER (WHERE status='running')::int running,
+    count(*) FILTER (WHERE status='done')::int done
+  FROM candle_repair_queue
+), cov AS (
+  SELECT
+    max(case when metric='candles_eligible_total' then value_numeric end)::int eligible_total,
+    max(case when metric='candles_eligible_with_candles' then value_numeric end)::int eligible_with,
+    max(case when metric='candles_eligible_missing' then value_numeric end)::int eligible_missing
+  FROM market_stats
+)
+SELECT json_build_object(
+  'generated_at', now(),
+  'candles', json_build_object('rows', c.rows, 'max_ts', c.max_ts, 'max_ingested_at', c.max_ingested_at),
+  'symbols', json_build_object('rows', s.rows, 'max_updated_at', s.max_updated_at),
+  'coverage', json_build_object('eligible_total', cov.eligible_total, 'eligible_with', cov.eligible_with, 'eligible_missing', cov.eligible_missing),
+  'repair_queue', json_build_object('queued', rq.queued, 'running', rq.running, 'done', rq.done),
+  'frontier', json_build_object(
+     'status', (SELECT value_text FROM market_stats WHERE metric='candles_frontier_status'),
+     'lag_ms', (SELECT value_numeric FROM market_stats WHERE metric='candles_frontier_lag_ms')
+  )
+) AS j
+FROM c,s,rq,cov
+    `.trim();
+
+    const r = await pool.query(sql);
+    res.json({ ok: true, version: 'v1', data: r.rows?.[0]?.j || null });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: 'internal_error', message: String(e?.message || e) });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`history-api listening on :${PORT}`);
 });

@@ -1,0 +1,11 @@
+
+> vietstock-market@0.1.0 test:e2e
+> playwright test tests/e2e/checkpoint-c.spec.ts
+
+
+Running 2 tests using 2 workers
+
+  ✓  2 [chromium] › tests/e2e/checkpoint-c.spec.ts:16:5 › checkpoint-c symbol wiring + status screenshot (7.0s)
+  ✓  1 [chromium] › tests/e2e/checkpoint-c.spec.ts:7:5 › checkpoint-c home wiring + badge screenshot (9.2s)
+
+  2 passed (12.6s)
