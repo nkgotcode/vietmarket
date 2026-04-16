@@ -66,13 +66,13 @@ export async function GET(req: Request) {
                   a.created_at,
                   p.promotion_state,
                   p.paper_eligible,
-                  s.decision_score,
-                  s.model_confidence,
-                  s.evidence_confidence,
-                  s.execution_confidence
+                  ds.analytical_state,
+                  ds.policy_blocked,
+                  ds.state_json
              FROM paper_trade_admissions a
              LEFT JOIN promotion_decisions p ON p.recommendation_id = a.recommendation_id
-             LEFT JOIN recommendation_scorecards s ON s.recommendation_id = a.recommendation_id
+             LEFT JOIN decision_states_v2 ds ON ds.cycle_id = a.cycle_id AND ds.ticker = a.ticker
+               AND ds.grade_version = (SELECT grade_version FROM grade_versions ORDER BY created_at DESC LIMIT 1)
             WHERE a.cycle_id = $1
             ORDER BY CASE a.admission_status
               WHEN 'admitted' THEN 0
@@ -81,7 +81,6 @@ export async function GET(req: Request) {
               WHEN 'not_paper_eligible' THEN 3
               WHEN 'disabled' THEN 4
               ELSE 9 END ASC,
-              COALESCE(s.decision_score, 0) DESC,
               a.ticker ASC
             LIMIT 50`,
           [cycle.cycle_id]
@@ -125,16 +124,21 @@ export async function GET(req: Request) {
     admissions: {
       counts: admissionCounts,
       total: admissionTotal,
-      rows: admissionsResult.rows.map((row) => ({
-        ...row,
-        decision_score: toNumber(row.decision_score),
-        model_confidence: toNumber(row.model_confidence),
-        evidence_confidence: toNumber(row.evidence_confidence),
-        execution_confidence: toNumber(row.execution_confidence),
-        paper_eligible: Boolean(row.paper_eligible),
-        paper_trading_enabled: Boolean(row.paper_trading_enabled),
-        admission_json: (row.admission_json ?? null) as JsonValue,
-      })),
+      rows: admissionsResult.rows.map((row) => {
+        const state = (row.state_json ?? {}) as Record<string, unknown>;
+        return {
+          ...row,
+          analytical_state: row.analytical_state ?? null,
+          policy_blocked: Boolean(row.policy_blocked),
+          paper_eligible: Boolean(row.paper_eligible),
+          paper_trading_enabled: Boolean(row.paper_trading_enabled),
+          opportunity_grade: String(state['Opportunity Grade'] ?? '—'),
+          tradability_grade: String(state['Tradability Grade'] ?? '—'),
+          forecast_reliability: toNumber(state['forecast_reliability']),
+          execution_reliability: toNumber(state['execution_reliability']),
+          admission_json: (row.admission_json ?? null) as JsonValue,
+        };
+      }),
     },
   });
 }

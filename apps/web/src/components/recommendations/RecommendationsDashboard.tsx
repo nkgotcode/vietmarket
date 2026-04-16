@@ -10,9 +10,10 @@ type Payload = {
   rows: Array<{
     ticker: string;
     status: string;
+    analytical_state?: string | null;
+    policy_blocked?: boolean;
     side: string;
     horizon: string;
-    confidence: number;
     suggested_priority: number;
     summary: string;
     why_now: string;
@@ -21,16 +22,14 @@ type Payload = {
     icb_code?: string | null;
     industry_code?: string | null;
     score_version?: string | null;
-    alpha_score?: number | null;
-    quality_score?: number | null;
-    risk_score?: number | null;
-    execution_score?: number | null;
-    decision_score?: number | null;
-    model_confidence?: number | null;
-    evidence_confidence?: number | null;
-    execution_confidence?: number | null;
-    recommended_state?: string | null;
     paper_eligible?: boolean | null;
+    opportunity_grade?: string | null;
+    evidence_grade?: string | null;
+    tradability_grade?: string | null;
+    risk_containment_grade?: string | null;
+    forecast_reliability?: number | null;
+    evidence_reliability?: number | null;
+    execution_reliability?: number | null;
   }>;
 };
 
@@ -50,7 +49,9 @@ export default function RecommendationsDashboard() {
         setError(err instanceof Error ? err.message : 'Failed to load recommendations');
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (error) return <p style={{ color: '#b00020' }}>{error}</p>;
@@ -58,7 +59,10 @@ export default function RecommendationsDashboard() {
 
   return (
     <section style={{ display: 'grid', gap: 12 }}>
-      <div style={{ color: '#666' }}>Durable recommendation objects now prefer scoring v2 decision states and explicit promotion semantics over legacy Phase 3 bucket labels.</div>
+      <div style={{ color: '#666' }}>
+        Recommendations now render explicit grade semantics: Opportunity Grade, Evidence Grade, Tradability Grade, Risk Containment Grade,
+        plus Forecast Reliability, Evidence Reliability, and Execution Reliability. Analytical state remains visible even when policy blocks admission.
+      </div>
       {payload.rows.map((row) => <RecommendationCard key={row.ticker} row={row} />)}
       {payload.rows.length === 0 ? <p style={{ color: '#666' }}>No recommendations available.</p> : null}
     </section>

@@ -22,6 +22,11 @@ SCRIPTS = (
     ('analyze_score_deciles', 'packages/supervisor/evaluation/analyze_score_deciles.py'),
     ('analyze_regime_stability', 'packages/supervisor/evaluation/analyze_regime_stability.py'),
     ('calibration', 'packages/supervisor/reports/calibration.py'),
+    ('build_feature_snapshots', 'packages/supervisor/grading/build_feature_snapshots.py'),
+    ('build_estimates', 'packages/supervisor/grading/build_estimates.py'),
+    ('calibrate_grades', 'packages/supervisor/grading/calibrate_grades.py'),
+    ('build_grades', 'packages/supervisor/grading/build_grades.py'),
+    ('build_decision_states', 'packages/supervisor/grading/build_decision_states.py'),
     ('build_scores_v2', 'packages/supervisor/scoring/build_scores_v2.py'),
 )
 

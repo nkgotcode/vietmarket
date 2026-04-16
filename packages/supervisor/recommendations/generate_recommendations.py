@@ -58,13 +58,21 @@ def generate_recommendations() -> dict:
                        d.recommended_state,
                        d.paper_eligible,
                        d.block_reason_json,
-                       d.score_json
+                       d.score_json,
+                       ds.analytical_state,
+                       ds.final_state,
+                       ds.paper_eligible AS grade_paper_eligible,
+                       ds.policy_blocked,
+                       ds.state_json
                 FROM theses t
                 JOIN decision_scores d
                   ON d.cycle_id = t.cycle_id AND d.ticker = t.ticker
+                LEFT JOIN decision_states_v2 ds
+                  ON ds.cycle_id = t.cycle_id AND ds.ticker = t.ticker
+                 AND ds.grade_version = (SELECT grade_version FROM grade_versions ORDER BY created_at DESC LIMIT 1)
                 WHERE t.cycle_id = %s
                   AND d.score_version = (SELECT score_version FROM score_versions ORDER BY created_at DESC LIMIT 1)
-                ORDER BY d.paper_eligible DESC, d.decision_score DESC, d.model_confidence DESC, t.ticker ASC
+                ORDER BY coalesce(ds.paper_eligible, d.paper_eligible) DESC, d.decision_score DESC, d.model_confidence DESC, t.ticker ASC
                 ''',
                 (cycle_id,),
             )
@@ -99,10 +107,17 @@ def generate_recommendations() -> dict:
                     paper_eligible,
                     block_reason_json,
                     score_json,
+                    analytical_state,
+                    final_state,
+                    grade_paper_eligible,
+                    policy_blocked,
+                    state_json,
                 ) = row
 
-                status = recommended_state
-                confidence = float(model_confidence or 0.0)
+                grade_state = dict(state_json or {})
+                status = str(final_state or recommended_state)
+                paper_eligible = bool(grade_paper_eligible) if grade_paper_eligible is not None else bool(paper_eligible)
+                confidence = float(grade_state.get('forecast_reliability') or model_confidence or 0.0)
                 suggested_priority = max(0, 100 - int(float(decision_score or 0.0)))
                 summary = (
                     f"{ticker} is {status} with decision score {float(decision_score or 0.0):.2f}, "
@@ -112,6 +127,8 @@ def generate_recommendations() -> dict:
                 recommendation_json = {
                     'ticker': ticker,
                     'status': status,
+                    'analytical_state': analytical_state or recommended_state,
+                    'policy_blocked': bool(policy_blocked),
                     'score_version': score_version,
                     'paper_eligible': bool(paper_eligible),
                     'alpha_score': alpha_score,
@@ -122,13 +139,22 @@ def generate_recommendations() -> dict:
                     'model_confidence': model_confidence,
                     'evidence_confidence': evidence_confidence,
                     'execution_confidence': execution_confidence,
+                    'Opportunity Grade': grade_state.get('Opportunity Grade'),
+                    'Evidence Grade': grade_state.get('Evidence Grade'),
+                    'Tradability Grade': grade_state.get('Tradability Grade'),
+                    'Risk Containment Grade': grade_state.get('Risk Containment Grade'),
+                    'forecast_reliability': grade_state.get('forecast_reliability'),
+                    'evidence_reliability': grade_state.get('evidence_reliability'),
+                    'execution_reliability': grade_state.get('execution_reliability'),
                     'block_reason_json': block_reason_json or {},
                     'score_json': score_json or {},
+                    'state_json': grade_state,
                     'thesis_notes': notes,
                 }
                 why_now_text = (
-                    f"{why_now}; v2 state {status}, decision score {float(decision_score or 0.0):.2f}, "
-                    f"model confidence {float(model_confidence or 0.0):.2f}"
+                    f"{why_now}; state {status}, analytical_state {analytical_state or recommended_state}, "
+                    f"Opportunity Grade {grade_state.get('Opportunity Grade')}, Tradability Grade {grade_state.get('Tradability Grade')}, "
+                    f"forecast reliability {float(grade_state.get('forecast_reliability') or confidence or 0.0):.2f}"
                 )
                 recommendation_id = new_recommendation_id()
                 cur.execute(
@@ -205,8 +231,13 @@ def generate_recommendations() -> dict:
                                     'model_confidence': model_confidence,
                                     'evidence_confidence': evidence_confidence,
                                     'execution_confidence': execution_confidence,
+                                    'analytical_state': analytical_state or recommended_state,
+                                    'policy_blocked': bool(policy_blocked),
+                                    'Opportunity Grade': grade_state.get('Opportunity Grade'),
+                                    'Tradability Grade': grade_state.get('Tradability Grade'),
                                     'block_reason_json': block_reason_json or {},
                                     'score_json': score_json or {},
+                                    'state_json': grade_state,
                                 }
                             ),
                             default=str,

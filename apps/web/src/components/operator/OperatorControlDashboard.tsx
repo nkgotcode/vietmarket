@@ -53,10 +53,12 @@ type OperatorControlPayload = {
       created_at: string;
       promotion_state: string | null;
       paper_eligible: boolean;
-      decision_score: number;
-      model_confidence: number;
-      evidence_confidence: number;
-      execution_confidence: number;
+      analytical_state?: string | null;
+      policy_blocked?: boolean;
+      opportunity_grade: string;
+      tradability_grade: string;
+      forecast_reliability: number;
+      execution_reliability: number;
     }>;
   };
 };
@@ -77,6 +79,11 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div style={{ fontSize: 20, fontWeight: 700 }}>{value}</div>
     </div>
   );
+}
+
+function pct(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 export default function OperatorControlDashboard({ data }: { data: OperatorControlPayload }) {
@@ -173,9 +180,9 @@ export default function OperatorControlDashboard({ data }: { data: OperatorContr
               <tr>
                 <th style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb', paddingBottom: 8 }}>Ticker</th>
                 <th style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb', paddingBottom: 8 }}>Admission</th>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb', paddingBottom: 8 }}>Promotion state</th>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb', paddingBottom: 8 }}>Decision</th>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb', paddingBottom: 8 }}>Confidences</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb', paddingBottom: 8 }}>Analytical state</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb', paddingBottom: 8 }}>Grades</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb', paddingBottom: 8 }}>Reliability</th>
               </tr>
             </thead>
             <tbody>
@@ -185,14 +192,19 @@ export default function OperatorControlDashboard({ data }: { data: OperatorContr
                   <td style={{ paddingTop: 10, verticalAlign: 'top' }}>
                     <strong>{row.admission_status}</strong>
                     <div style={{ color: '#6b7280', fontSize: 12 }}>{row.policy_result ?? 'no policy result'}</div>
+                    <div style={{ color: '#6b7280', fontSize: 12 }}>policy blocked: {row.policy_blocked ? 'yes' : 'no'}</div>
                   </td>
                   <td style={{ paddingTop: 10, verticalAlign: 'top' }}>
-                    {row.promotion_state ?? 'n/a'}
+                    {row.analytical_state ?? row.promotion_state ?? 'n/a'}
                     <div style={{ color: '#6b7280', fontSize: 12 }}>paper eligible: {row.paper_eligible ? 'yes' : 'no'}</div>
                   </td>
-                  <td style={{ paddingTop: 10, verticalAlign: 'top' }}>{row.decision_score.toFixed(2)}</td>
                   <td style={{ paddingTop: 10, verticalAlign: 'top' }}>
-                    model {row.model_confidence.toFixed(2)} / evidence {row.evidence_confidence.toFixed(2)} / exec {row.execution_confidence.toFixed(2)}
+                    <div>Opportunity Grade: {row.opportunity_grade}</div>
+                    <div style={{ color: '#6b7280', fontSize: 12 }}>Tradability Grade: {row.tradability_grade}</div>
+                  </td>
+                  <td style={{ paddingTop: 10, verticalAlign: 'top' }}>
+                    <div>Forecast Reliability: {pct(row.forecast_reliability)}</div>
+                    <div style={{ color: '#6b7280', fontSize: 12 }}>Execution Reliability: {pct(row.execution_reliability)}</div>
                   </td>
                 </tr>
               ))}

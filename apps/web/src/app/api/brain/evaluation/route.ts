@@ -25,8 +25,8 @@ export async function GET(req: Request) {
     latestCalibrationRunResult,
     calibrationBucketsResult,
     cohortMetricsResult,
-    scoreVersionsResult,
-    decisionScoresResult,
+    gradeVersionsResult,
+    gradePreviewResult,
   ] = await Promise.all([
     pool.query(`SELECT supervisor_run_id, mode, status, latest_health_status, latest_cycle_id, started_at, finished_at FROM supervisor_runs WHERE status = 'complete' ORDER BY started_at DESC LIMIT 1`),
     pool.query(`SELECT outcome_status, count(*)::int AS count FROM recommendation_outcomes GROUP BY outcome_status ORDER BY outcome_status ASC`),
@@ -40,8 +40,31 @@ export async function GET(req: Request) {
     pool.query(`SELECT calibration_run_id, score_version, scope, summary_json, created_at FROM calibration_runs ORDER BY created_at DESC LIMIT 1`),
     pool.query(`SELECT bucket_name, horizon_days, sample_size, avg_forward_return, median_forward_return, positive_rate, avg_excess_return, avg_max_drawdown, metric_json, created_at FROM calibration_buckets WHERE calibration_run_id = (SELECT calibration_run_id FROM calibration_runs ORDER BY created_at DESC LIMIT 1) ORDER BY horizon_days ASC, bucket_name ASC`),
     pool.query(`SELECT cohort_type, cohort_key, horizon_days, sample_size, positive_rate, avg_forward_return, median_forward_return, avg_excess_return, avg_max_drawdown, summary_json, created_at FROM cohort_metrics ORDER BY created_at DESC, cohort_type ASC, horizon_days ASC, sample_size DESC LIMIT 60`),
-    pool.query(`SELECT score_version, status, description, config_json, created_at FROM score_versions ORDER BY created_at DESC LIMIT 5`),
-    pool.query(`SELECT score_version, ticker, alpha_score, quality_score, risk_score, execution_score, decision_score, model_confidence, evidence_confidence, execution_confidence, recommended_state, paper_eligible, created_at FROM decision_scores WHERE cycle_id = (SELECT cycle_id FROM market_state_cycles ORDER BY created_at DESC LIMIT 1) AND score_version = (SELECT score_version FROM score_versions ORDER BY created_at DESC LIMIT 1) ORDER BY paper_eligible DESC, decision_score DESC, ticker ASC LIMIT 20`),
+    pool.query(`SELECT grade_version, status, description, created_at FROM grade_versions ORDER BY created_at DESC LIMIT 5`),
+    pool.query(`SELECT ds.grade_version,
+                       ds.ticker,
+                       ds.analytical_state,
+                       ds.final_state,
+                       ds.paper_eligible,
+                       ds.policy_blocked,
+                       rs.forecast_reliability,
+                       rs.evidence_reliability,
+                       rs.execution_reliability,
+                       o.grade_label AS opportunity_grade,
+                       e.grade_label AS evidence_grade,
+                       t.grade_label AS tradability_grade,
+                       r.grade_label AS risk_containment_grade,
+                       ds.created_at
+                  FROM decision_states_v2 ds
+                  JOIN reliability_snapshots rs ON rs.cycle_id = ds.cycle_id AND rs.ticker = ds.ticker AND rs.grade_version = ds.grade_version
+                  JOIN opportunity_grades o ON o.cycle_id = ds.cycle_id AND o.ticker = ds.ticker AND o.grade_version = ds.grade_version
+                  JOIN evidence_grades e ON e.cycle_id = ds.cycle_id AND e.ticker = ds.ticker AND e.grade_version = ds.grade_version
+                  JOIN tradability_grades t ON t.cycle_id = ds.cycle_id AND t.ticker = ds.ticker AND t.grade_version = ds.grade_version
+                  JOIN risk_containment_grades r ON r.cycle_id = ds.cycle_id AND r.ticker = ds.ticker AND r.grade_version = ds.grade_version
+                 WHERE ds.cycle_id = (SELECT cycle_id FROM market_state_cycles ORDER BY created_at DESC LIMIT 1)
+                   AND ds.grade_version = (SELECT grade_version FROM grade_versions ORDER BY created_at DESC LIMIT 1)
+                 ORDER BY ds.paper_eligible DESC, rs.forecast_reliability DESC, ds.ticker ASC
+                 LIMIT 20`),
   ]);
 
   const outcomeCounts = Object.fromEntries(outcomesResult.rows.map((row) => [String(row.outcome_status), Number(row.count)]));
@@ -105,18 +128,14 @@ export async function GET(req: Request) {
       summary_json: row.summary_json as JsonValue,
       created_at: row.created_at,
     })),
-    score_versions: scoreVersionsResult.rows,
-    decision_scores_v2: decisionScoresResult.rows.map((row) => ({
+    grade_versions: gradeVersionsResult.rows,
+    grade_preview: gradePreviewResult.rows.map((row) => ({
       ...row,
-      alpha_score: Number(row.alpha_score ?? 0),
-      quality_score: Number(row.quality_score ?? 0),
-      risk_score: Number(row.risk_score ?? 0),
-      execution_score: Number(row.execution_score ?? 0),
-      decision_score: Number(row.decision_score ?? 0),
-      model_confidence: Number(row.model_confidence ?? 0),
-      evidence_confidence: Number(row.evidence_confidence ?? 0),
-      execution_confidence: Number(row.execution_confidence ?? 0),
+      forecast_reliability: Number(row.forecast_reliability ?? 0),
+      evidence_reliability: Number(row.evidence_reliability ?? 0),
+      execution_reliability: Number(row.execution_reliability ?? 0),
       paper_eligible: Boolean(row.paper_eligible),
+      policy_blocked: Boolean(row.policy_blocked),
     })),
   });
 }

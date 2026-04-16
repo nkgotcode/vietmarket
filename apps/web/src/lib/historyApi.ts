@@ -16,6 +16,40 @@ export type NewsRow = { url: string; title: string; source: string; published_at
 
 export type V1Envelope<T> = { ok: boolean; version: 'v1'; data: T };
 
+export type AnalyticsOverview = {
+  candles_rows?: number | null;
+  coverage_pct?: number | null;
+};
+
+export type OverallHealth = {
+  frontier?: {
+    lag_ms?: number | null;
+    status?: string | null;
+  } | null;
+  repair_queue?: {
+    queued?: number | null;
+  } | null;
+};
+
+export type SentimentOverview = {
+  overall?: {
+    articles?: number | null;
+  } | null;
+};
+
+export type TickerSentiment = {
+  summary?: {
+    avg_score?: number | null;
+    articles?: number | null;
+  } | null;
+};
+
+export type TickerContext = {
+  news?: Array<unknown> | null;
+  corporate_actions?: Array<unknown> | null;
+  fundamentals?: Array<unknown> | null;
+};
+
 export async function fetchCandles(params: {
   ticker: string;
   tf: TF;
@@ -116,26 +150,26 @@ async function fetchV1<T>(path: string): Promise<T> {
 }
 
 export async function fetchAnalyticsOverview() {
-  return fetchV1<any>('/api/analytics/overview');
+  return fetchV1<AnalyticsOverview>('/api/analytics/overview');
 }
 
 export async function fetchOverallHealth() {
-  return fetchV1<any>('/api/overall/health');
+  return fetchV1<OverallHealth>('/api/overall/health');
 }
 
 export async function fetchSentimentOverview(params: { windowDays?: number; limit?: number } = {}) {
   const q = new URL('/api/sentiment/overview', window.location.origin);
   if (params.windowDays != null) q.searchParams.set('windowDays', String(params.windowDays));
   if (params.limit != null) q.searchParams.set('limit', String(params.limit));
-  return fetchV1<any>(q.pathname + q.search);
+  return fetchV1<SentimentOverview>(q.pathname + q.search);
 }
 
 export async function fetchTickerSentiment(ticker: string, params: { windowDays?: number } = {}) {
   const q = new URL(`/api/sentiment/${encodeURIComponent(ticker)}`, window.location.origin);
   if (params.windowDays != null) q.searchParams.set('windowDays', String(params.windowDays));
-  return fetchV1<any>(q.pathname + q.search);
+  return fetchV1<TickerSentiment>(q.pathname + q.search);
 }
 
 export async function fetchTickerContext(ticker: string) {
-  return fetchV1<any>(`/api/context/${encodeURIComponent(ticker)}`);
+  return fetchV1<TickerContext>(`/api/context/${encodeURIComponent(ticker)}`);
 }

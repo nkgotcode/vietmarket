@@ -49,30 +49,38 @@ def _latest_rows(conn) -> list[dict[str, Any]]:
             SELECT r.recommendation_id,
                    r.cycle_id,
                    r.ticker,
-                   coalesce(p.promotion_state, r.status) AS recommendation_status,
+                   coalesce(ds.final_state, p.promotion_state, r.status) AS recommendation_status,
+                   ds.analytical_state,
+                   ds.policy_blocked,
                    r.side,
-                   coalesce((r.recommendation_json->>'model_confidence')::double precision, r.confidence, 0) AS confidence,
+                   coalesce((r.recommendation_json->>'forecast_reliability')::double precision,
+                            (r.recommendation_json->>'model_confidence')::double precision,
+                            r.confidence,
+                            0) AS confidence,
                    r.suggested_priority,
                    c.overall_status AS cycle_overall_status,
                    t.liquidity_bucket,
                    t.corporate_action_flag AS has_corporate_action,
-                   coalesce(d.execution_score / 100.0, 0) AS liquidity_score,
+                   coalesce((r.recommendation_json->>'execution_reliability')::double precision,
+                            d.execution_score / 100.0,
+                            0) AS liquidity_score,
                    t.sector,
-                   coalesce(d.paper_eligible, false) AS paper_eligible,
+                   coalesce(ds.paper_eligible, d.paper_eligible, false) AS paper_eligible,
                    d.decision_score,
                    d.score_version
             FROM recommendations r
             JOIN market_state_cycles c ON c.cycle_id = r.cycle_id
-            LEFT JOIN recommendation_scorecards s
-              ON s.recommendation_id = r.recommendation_id
             LEFT JOIN promotion_decisions p
               ON p.recommendation_id = r.recommendation_id
+            LEFT JOIN decision_states_v2 ds
+              ON ds.cycle_id = r.cycle_id AND ds.ticker = r.ticker
+             AND ds.grade_version = (SELECT grade_version FROM grade_versions ORDER BY created_at DESC LIMIT 1)
             LEFT JOIN ticker_snapshots t ON t.cycle_id = r.cycle_id AND t.ticker = r.ticker
             LEFT JOIN decision_scores d
               ON d.cycle_id = r.cycle_id AND d.ticker = r.ticker
              AND d.score_version = (SELECT score_version FROM score_versions ORDER BY created_at DESC LIMIT 1)
             WHERE r.cycle_id = (SELECT cycle_id FROM market_state_cycles ORDER BY created_at DESC LIMIT 1)
-            ORDER BY coalesce(d.paper_eligible, false) DESC, coalesce(d.decision_score, 0) DESC, r.ticker ASC
+            ORDER BY coalesce(ds.paper_eligible, d.paper_eligible, false) DESC, coalesce(d.decision_score, 0) DESC, r.ticker ASC
             '''
         )
         return [dict(row) for row in cur.fetchall()]

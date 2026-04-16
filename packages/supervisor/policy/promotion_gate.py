@@ -54,6 +54,10 @@ def evaluate_promotion_gate() -> dict:
                        p.ticker,
                        p.promotion_state,
                        p.paper_eligible,
+                       ds.analytical_state,
+                       ds.final_state,
+                       ds.policy_blocked,
+                       ds.state_json,
                        r.score_version,
                        r.alpha_score,
                        r.quality_score,
@@ -68,10 +72,12 @@ def evaluate_promotion_gate() -> dict:
                        v.thresholds_json
                 FROM promotion_decisions p
                 JOIN recommendation_scorecards r ON r.recommendation_id = p.recommendation_id
+                LEFT JOIN decision_states_v2 ds ON ds.cycle_id = p.cycle_id AND ds.ticker = p.ticker
+                  AND ds.grade_version = (SELECT grade_version FROM grade_versions ORDER BY created_at DESC LIMIT 1)
                 LEFT JOIN policy_results pr ON pr.recommendation_id = p.recommendation_id
                 JOIN promotion_policy_versions v ON v.promotion_policy_version = %s
                 WHERE p.cycle_id = (SELECT cycle_id FROM market_state_cycles ORDER BY created_at DESC LIMIT 1)
-                ORDER BY p.paper_eligible DESC, r.decision_score DESC, p.ticker ASC
+                ORDER BY coalesce(ds.paper_eligible, p.paper_eligible) DESC, r.decision_score DESC, p.ticker ASC
                 ''',
                 (policy_version,),
             )
@@ -86,7 +92,10 @@ def evaluate_promotion_gate() -> dict:
                 thresholds = row.get('thresholds_json') or {}
                 reasons = {
                     'promotion_state': row.get('promotion_state'),
+                    'analytical_state': row.get('analytical_state'),
+                    'final_state': row.get('final_state'),
                     'paper_eligible': bool(row.get('paper_eligible')),
+                    'policy_blocked': bool(row.get('policy_blocked')),
                     'policy_result': row.get('policy_result'),
                     'paper_trading_enabled': bool(row.get('paper_trading_enabled')),
                 }
@@ -98,11 +107,12 @@ def evaluate_promotion_gate() -> dict:
                     and float(row.get('risk_score') or 0.0) >= float(thresholds.get('risk_score', 0.0))
                     and float(row.get('execution_score') or 0.0) >= float(thresholds.get('execution_score', 0.0))
                 )
+                effective_paper_eligible = bool(row.get('paper_eligible')) and row.get('analytical_state') == 'paper_eligible'
                 if not bool(row.get('paper_trading_enabled')):
                     admission_status = 'disabled'
-                elif row.get('policy_result') != 'approved':
+                elif bool(row.get('policy_blocked')) or row.get('policy_result') != 'approved':
                     admission_status = 'blocked_policy'
-                elif not bool(row.get('paper_eligible')):
+                elif not effective_paper_eligible:
                     admission_status = 'not_paper_eligible'
                 elif not meets_thresholds:
                     admission_status = 'below_thresholds'
@@ -110,6 +120,7 @@ def evaluate_promotion_gate() -> dict:
                     admission_status = 'admitted'
                     admitted += 1
                 reasons['meets_thresholds'] = meets_thresholds
+                reasons['effective_paper_eligible'] = effective_paper_eligible
                 cur.execute(
                     '''
                     INSERT INTO paper_trade_admissions (
@@ -132,7 +143,7 @@ def evaluate_promotion_gate() -> dict:
                         utc_now(),
                     ),
                 )
-                preview.append({'ticker': row['ticker'], 'admission_status': admission_status, 'paper_eligible': bool(row.get('paper_eligible'))})
+                preview.append({'ticker': row['ticker'], 'admission_status': admission_status, 'analytical_state': row.get('analytical_state'), 'paper_eligible': effective_paper_eligible})
         return {
             'ok': True,
             'cycle_id': cycle_id,

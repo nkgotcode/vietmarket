@@ -1,9 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { fetchAnalyticsOverview, fetchOverallHealth, fetchSentimentOverview } from '@/lib/historyApi';
+import { type AnalyticsOverview, type OverallHealth, type SentimentOverview, fetchAnalyticsOverview, fetchOverallHealth, fetchSentimentOverview } from '@/lib/historyApi';
 
-function badge(frontier: any) {
+type OverviewState = {
+  a: AnalyticsOverview;
+  h: OverallHealth;
+  s: SentimentOverview;
+};
+
+function badge(frontier: OverallHealth['frontier']) {
   const lag = Number(frontier?.lag_ms ?? 0);
   const status = String(frontier?.status || '').toLowerCase();
   if (status === 'fresh' && lag <= 2 * 60 * 60 * 1000) return { text: 'Fresh', bg: '#e8f5e9', fg: '#1b5e20' };
@@ -11,7 +17,7 @@ function badge(frontier: any) {
 }
 
 export default function V1OverviewClient() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<OverviewState | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -23,8 +29,8 @@ export default function V1OverviewClient() {
           fetchSentimentOverview({ windowDays: 7, limit: 5 }),
         ]);
         setData({ a, h, s });
-      } catch (e: any) {
-        setErr(e?.message || String(e));
+      } catch (e: unknown) {
+        setErr(e instanceof Error ? e.message : String(e));
       }
     })();
   }, []);

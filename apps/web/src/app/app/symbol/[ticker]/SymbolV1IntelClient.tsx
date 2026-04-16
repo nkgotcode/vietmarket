@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { fetchTickerContext, fetchTickerSentiment, fetchOverallHealth } from '@/lib/historyApi';
+import { type OverallHealth, type TickerContext, type TickerSentiment, fetchTickerContext, fetchTickerSentiment, fetchOverallHealth } from '@/lib/historyApi';
 
 export default function SymbolV1IntelClient({ ticker }: { ticker: string }) {
-  const [ctx, setCtx] = useState<any>(null);
-  const [sent, setSent] = useState<any>(null);
-  const [health, setHealth] = useState<any>(null);
+  const [ctx, setCtx] = useState<TickerContext | null>(null);
+  const [sent, setSent] = useState<TickerSentiment | null>(null);
+  const [health, setHealth] = useState<OverallHealth | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -20,8 +20,8 @@ export default function SymbolV1IntelClient({ ticker }: { ticker: string }) {
         setCtx(c);
         setSent(s);
         setHealth(h);
-      } catch (e: any) {
-        setErr(e?.message || String(e));
+      } catch (e: unknown) {
+        setErr(e instanceof Error ? e.message : String(e));
       }
     })();
   }, [ticker]);
